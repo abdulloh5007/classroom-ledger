@@ -1,3 +1,5 @@
+import { Pencil } from 'lucide-react';
+import { Marquee } from './Marquee';
 import { currencyUnit, moneyNumber } from '../src/money';
 import { useI18n } from './i18n';
 import { memo, useLayoutEffect, useRef, useState } from 'react';
@@ -16,6 +18,7 @@ export const WalletHero = memo(function WalletHero({
   onMonthChange,
   groupName,
   onCreateGroup,
+  onEditGroup,
   onSelectGroup,
   groups,
   groupId,
@@ -29,6 +32,7 @@ export const WalletHero = memo(function WalletHero({
   onMonthChange: (month: string) => void;
   groupName: string;
   onCreateGroup: () => void;
+  onEditGroup: () => void;
   onSelectGroup: (id: number) => void;
   groups: Group[];
   groupId?: number;
@@ -63,8 +67,9 @@ export const WalletHero = memo(function WalletHero({
       aria-label={t('Сводка оплат за месяц')}
       style={{ touchAction: 'pan-y' }}
       onPointerDownCapture={(event) => {
-        ignorePan.current =
-          event.target instanceof Element && Boolean(event.target.closest('button, [role="menu"]'));
+        const control =
+          event.target instanceof Element ? event.target.closest('button, [role="menu"]') : null;
+        ignorePan.current = Boolean(control && !control.classList.contains('wallet-edge'));
         moved.current = false;
       }}
       onPanStart={() => {
@@ -97,9 +102,20 @@ export const WalletHero = memo(function WalletHero({
         activeId={groupId}
         ready={ready}
       />
-      <MonthPicker month={month} direction={direction} onChange={onMonthChange} />
+      <div className="hero-top-row">
+        <MonthPicker month={month} direction={direction} onChange={onMonthChange} />
+      </div>
       <p className="wallet-group-name" title={groupName}>
-        {ready ? groupName || t('Нет групп') : t('Загрузка…')}
+        <Marquee text={ready ? groupName || t('Нет групп') : t('Загрузка…')} />
+        {ready && groupId && (
+          <button
+            className="icon-button group-edit-button"
+            aria-label={t('Изменить группу')}
+            onClick={onEditGroup}
+          >
+            <Pencil size={14} />
+          </button>
+        )}
       </p>
       <div className="wallet-balance-area">
         <motion.div

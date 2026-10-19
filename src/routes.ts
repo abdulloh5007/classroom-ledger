@@ -14,6 +14,15 @@ export function registerRoutes(app: FastifyInstance, service: LedgerService): vo
     emptyQuery.parse(request.query);
     return reply.code(201).send(service.createGroup(request.body));
   });
+  app.patch('/groups/:id', async (request) => {
+    emptyQuery.parse(request.query);
+    return service.updateGroup(paramsSchema.parse(request.params).id, request.body);
+  });
+  app.delete('/groups/:id', async (request, reply) => {
+    emptyQuery.parse(request.query);
+    service.deleteGroup(paramsSchema.parse(request.params).id);
+    return reply.code(204).send();
+  });
   app.get('/courses', async (request) => {
     emptyQuery.parse(request.query);
     return service.courses();

@@ -116,7 +116,7 @@ it('мигрирует старые группы/тарифы и сохраня�
     });
     old.addPayment(first.id, { amount: 400, date: '2026-10-01' });
     file.exec(
-      'DROP TRIGGER group_student_match_insert; DROP TRIGGER group_student_match_update; DROP TRIGGER group_student_name; DROP TRIGGER group_course_immutable; DROP INDEX students_group; ALTER TABLE students DROP COLUMN group_id; DROP TABLE student_groups; DROP TRIGGER course_currency_immutable; DROP TRIGGER course_student_tariff; DROP INDEX students_course; ALTER TABLE students DROP COLUMN course_id; DROP TABLE courses; PRAGMA user_version=3;',
+      'DROP TRIGGER group_student_match_insert; DROP TRIGGER group_student_match_update; DROP TRIGGER group_student_name; DROP TRIGGER group_course_immutable; DROP INDEX students_group; ALTER TABLE students DROP COLUMN group_id; DROP TABLE student_groups; DROP TABLE course_tariffs; DROP TRIGGER course_initial_tariff; DROP TRIGGER course_tariff_version; DROP TRIGGER course_currency_immutable; DROP TRIGGER course_student_tariff; DROP INDEX students_course; ALTER TABLE students DROP COLUMN course_id; DROP TABLE courses; PRAGMA user_version=3;',
     );
     file.close();
     file = openDatabase(path);

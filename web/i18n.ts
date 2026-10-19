@@ -4,6 +4,18 @@ import { useSyncExternalStore } from 'react';
 
 export type Language = 'ru' | 'uz';
 const uz: Record<string, string> = {
+  'Изменить группу': 'Guruhni tahrirlash',
+  'Группа обновлена': 'Guruh yangilandi',
+  'Группа удалена': 'Guruh o‘chirildi',
+  'Удалить группу': 'Guruhni o‘chirish',
+  'Удалить всё': 'Hammasini o‘chirish',
+  'Действия необратимы. Вы согласны?': 'Bu amalni qaytarib bo‘lmaydi. Rozimisiz?',
+  'Новая стоимость действует со следующего месяца. История и тарифы прошлых месяцев сохраняются.':
+    'Yangi narx keyingi oydan amal qiladi. Tarix va avvalgi oylar narxi saqlanadi.',
+  'Изменения курса применяются ко всем его группам.':
+    'Kursdagi o‘zgarishlar uning barcha guruhlariga qo‘llanadi.',
+  'Группа, её ученики и оплаты будут удалены. Другие группы сохранятся.':
+    'Guruh, uning o‘quvchilari va to‘lovlari o‘chiriladi. Boshqa guruhlar saqlanadi.',
   'Валюта курса': 'Kurs valyutasi',
   Создать: 'Yaratish',
   'Нельзя менять валюту курса с учениками':

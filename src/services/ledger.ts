@@ -11,6 +11,7 @@ import {
   courseSchema,
   coursePatchSchema,
   groupSchema,
+  groupPatchSchema,
   type Currency,
   type Group,
   type Course,
@@ -154,6 +155,40 @@ export class LedgerService {
           .prepare('INSERT INTO student_groups(name, course_id) VALUES (?, ?)')
           .run(data.name, data.courseId);
         return this.group(Number(result.lastInsertRowid));
+      })
+      .immediate();
+  }
+  updateGroup(rawId: unknown, input: unknown): Group {
+    const patch = groupPatchSchema.parse(input);
+    return this.db
+      .transaction(() => {
+        const group = this.group(rawId);
+        const name = patch.name ?? group.name;
+        if (
+          this.db
+            .prepare('SELECT id FROM student_groups WHERE name=? AND course_id=? AND id<>?')
+            .get(name, group.courseId, group.id)
+        )
+          throw new AppError(409, 'Такая группа уже существует');
+        if (patch.courseName !== undefined || patch.monthlyAmount !== undefined)
+          this.updateCourse(group.courseId, {
+            name: patch.courseName ?? group.courseName,
+            monthlyAmount: patch.monthlyAmount ?? group.monthlyAmount,
+          });
+        this.db.prepare('UPDATE student_groups SET name=? WHERE id=?').run(name, group.id);
+        return this.group(group.id);
+      })
+      .immediate();
+  }
+  deleteGroup(rawId: unknown): void {
+    this.db
+      .transaction(() => {
+        const group = this.group(rawId);
+        this.db.prepare('DELETE FROM students WHERE group_id=?').run(group.id);
+        this.db.prepare('DELETE FROM student_groups WHERE id=?').run(group.id);
+        // Keep a shared course and every other group's data intact.
+        const course = this.course(group.courseId);
+        if (!course.studentCount && !course.groupCount) this.deleteCourse(course.id);
       })
       .immediate();
   }
@@ -328,7 +363,13 @@ export class LedgerService {
       )
       .get(student.id, start, end) as { paid: number };
     this.assertSafe(paid);
-    return { paid, debt: Math.max(0, student.monthlyAmount - paid) };
+    const tariff = this.db
+      .prepare(
+        `SELECT monthly_amount AS amount FROM course_tariffs
+      WHERE course_id=? AND effective_month<=? ORDER BY effective_month DESC LIMIT 1`,
+      )
+      .get(student.courseId, month) as { amount: number } | undefined;
+    return { paid, debt: Math.max(0, (tariff?.amount ?? student.monthlyAmount) - paid) };
   }
   debtors(month = currentMonth(), groupId?: unknown): Debtor[] {
     return this.monthlyBalances(month, groupId).filter((row) => row.debt > 0);
@@ -339,13 +380,18 @@ export class LedgerService {
     const rows = this.db
       .prepare(
         `
-      SELECT s.id AS studentId, s.name, s.phone, s.group_name AS "group", (SELECT currency FROM courses WHERE id=s.course_id) AS currency, s.monthly_amount AS monthlyAmount,
-        COALESCE(SUM(p.amount), 0) AS paid, MAX(0, s.monthly_amount - COALESCE(SUM(p.amount), 0)) AS debt
-      FROM students s LEFT JOIN payments p ON p.student_id=s.id AND p.paid_at>=? AND p.paid_at<?
-      WHERE (? IS NULL OR s.group_id=?) GROUP BY s.id ORDER BY debt DESC, s.name, s.id
+      WITH tariffs AS (
+        SELECT students.*, COALESCE((SELECT monthly_amount FROM course_tariffs
+          WHERE course_id=students.course_id AND effective_month<=? ORDER BY effective_month DESC LIMIT 1), students.monthly_amount) AS period_amount
+        FROM students WHERE (? IS NULL OR group_id=?)
+      )
+      SELECT s.id AS studentId, s.name, s.phone, s.group_name AS "group", (SELECT currency FROM courses WHERE id=s.course_id) AS currency, s.period_amount AS monthlyAmount,
+        COALESCE(SUM(p.amount), 0) AS paid, MAX(0, s.period_amount - COALESCE(SUM(p.amount), 0)) AS debt
+      FROM tariffs s LEFT JOIN payments p ON p.student_id=s.id AND p.paid_at>=? AND p.paid_at<?
+      GROUP BY s.id ORDER BY debt DESC, s.name, s.id
     `,
       )
-      .all(start, end, groupId ?? null, groupId ?? null) as Debtor[];
+      .all(month, groupId ?? null, groupId ?? null, start, end) as Debtor[];
     for (const row of rows) this.assertSafe(row.paid);
     this.assertSafe(rows.reduce((sum, row) => sum + row.debt, 0));
     return rows;

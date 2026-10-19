@@ -108,7 +108,7 @@ it('создаёт и валидирует группы через защищё�
     expect(
       (await app.inject({ method: 'PATCH', url: `/groups/${id}`, payload: { courseId: 1 } }))
         .statusCode,
-    ).toBe(404);
+    ).toBe(400);
   } finally {
     await app.close();
   }

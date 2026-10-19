@@ -5,9 +5,6 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Check,
-  CircleCheck,
-  CalendarDays,
-  BookOpen,
   CreditCard,
   GraduationCap,
   History as HistoryIcon,
@@ -18,7 +15,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import type { Course, Student } from '../src/contracts';
+import type { Course, Group, Student } from '../src/contracts';
 import { currentMonth } from '../src/calendar';
 import { Empty, Sheet, Tip, Spinner } from './components';
 import { DeleteStudent, History, PaymentForm, StudentForm } from './forms';
@@ -28,15 +25,15 @@ import { WalletHero } from './WalletHero';
 import { FloatingControls } from './FloatingControls';
 import { PaymentFilter, type PaymentStatus } from './PaymentFilter';
 import { revealTheme } from './theme';
-import { Courses, CourseForm, DeleteCourse } from './Courses';
-import { GroupForm } from './Groups';
+import { CourseForm } from './Courses';
+import { GroupForm, GroupEditor } from './Groups';
 
 type Modal =
   | { type: 'payment'; studentId?: number }
   | { type: 'student'; student?: Student }
   | { type: 'history' | 'delete'; student: Student }
   | { type: 'course'; course?: Course }
-  | { type: 'deleteCourse'; course: Course }
+  | { type: 'editGroup'; group: Group }
   | { type: 'group' };
 const initials = (name: string) =>
   name
@@ -69,7 +66,7 @@ export function App({
 
   const [month, setMonth] = useState(currentMonth());
   const [direction, setDirection] = useState(1);
-  const [tab, setTab] = useState<'debtors' | 'students' | 'courses'>('debtors');
+  const [tab, setTab] = useState<'debtors' | 'students'>('debtors');
   const {
     students,
     groups,
@@ -109,6 +106,9 @@ export function App({
     setSheetOpen(true);
   }, []);
   const createGroup = useCallback(() => showModal({ type: 'group' }), [showModal]);
+  const editGroup = useCallback(() => {
+    if (group) showModal({ type: 'editGroup', group });
+  }, [group, showModal]);
   const changeGroup = useCallback(
     (id: number) => {
       selectGroup(id);
@@ -197,12 +197,12 @@ export function App({
   const filtered = students.filter((student) => matchesStudent(student, query));
   const modalTitle = !modal
     ? ''
-    : modal.type === 'group'
-      ? t('Создать группу')
-      : modal.type === 'course'
-        ? t(modal.course ? 'Редактировать курс' : 'Новый курс')
-        : modal.type === 'deleteCourse'
-          ? t('Удалить курс?')
+    : modal.type === 'editGroup'
+      ? t('Изменить группу')
+      : modal.type === 'group'
+        ? t('Создать группу')
+        : modal.type === 'course'
+          ? t(modal.course ? 'Редактировать курс' : 'Новый курс')
           : modal.type === 'payment'
             ? t('Внести оплату')
             : modal.type === 'student'
@@ -214,7 +214,7 @@ export function App({
                 : t('История оплат');
   const modalDescription = !modal
     ? ''
-    : modal.type === 'group' || modal.type === 'course' || modal.type === 'deleteCourse'
+    : modal.type === 'group' || modal.type === 'course' || modal.type === 'editGroup'
       ? ''
       : modal.type === 'payment'
         ? ''
@@ -245,6 +245,7 @@ export function App({
               : ''
           }
           onCreateGroup={createGroup}
+          onEditGroup={editGroup}
           onSelectGroup={changeGroup}
           groups={groups}
           groupId={group?.id}
@@ -256,7 +257,6 @@ export function App({
               [
                 { id: 'debtors', label: t('Должники'), Icon: CreditCard },
                 { id: 'students', label: t('Ученики'), Icon: Users },
-                { id: 'courses', label: t('Курсы'), Icon: BookOpen },
               ] as const
             ).map(({ id, label, Icon }) => (
               <button
@@ -269,12 +269,12 @@ export function App({
                 onKeyDown={(event) => {
                   if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
                     event.preventDefault();
-                    const order = ['debtors', 'students', 'courses'] as const;
+                    const order = ['debtors', 'students'] as const;
                     const target =
                       event.key === 'Home'
                         ? order[0]
                         : event.key === 'End'
-                          ? order[2]
+                          ? order[1]
                           : order[
                               (order.indexOf(tab) +
                                 (event.key === 'ArrowRight' ? 1 : -1) +
@@ -417,44 +417,14 @@ export function App({
                         ))}
                       </AnimatePresence>
                     </div>
-                    {!debtors.length && (
+                    {!debtors.length && students.length > 0 && !future && (
                       <Empty
-                        icon={future ? <CalendarDays size={25} /> : <CircleCheck size={25} />}
-                        title={
-                          future
-                            ? t('Месяц ещё не начался')
-                            : students.length
-                              ? t('Нет учеников по фильтру')
-                              : t('Нет учеников')
-                        }
-                        text={
-                          future
-                            ? t('Данные появятся, когда наступит этот месяц.')
-                            : students.length
-                              ? t('Выберите другой статус оплаты с помощью фильтра.')
-                              : t('Добавьте первого ученика, чтобы начать учёт оплат.')
-                        }
-                        action={
-                          !future && !students.length ? (
-                            <button
-                              className="button primary"
-                              onClick={() => showModal({ type: 'student' })}
-                            >
-                              <Plus size={17} />
-                              {t('Добавить ученика')}{' '}
-                            </button>
-                          ) : undefined
-                        }
+                        icon={<Users size={25} />}
+                        title={t('Нет учеников по фильтру')}
+                        text={t('Выберите другой статус оплаты с помощью фильтра.')}
                       />
                     )}
                   </>
-                ) : tab === 'courses' ? (
-                  <Courses
-                    courses={courses}
-                    onCreate={() => showModal({ type: 'course' })}
-                    onEdit={(course) => showModal({ type: 'course', course })}
-                    onDelete={(course) => showModal({ type: 'deleteCourse', course })}
-                  />
                 ) : (
                   <>
                     <div className="students-toolbar">
@@ -586,26 +556,11 @@ export function App({
                         ))}
                       </AnimatePresence>
                     </div>
-                    {!filtered.length && (
+                    {!filtered.length && query && students.length > 0 && (
                       <Empty
                         icon={<Users size={25} />}
-                        title={query ? t('Никого не нашли') : t('Нет учеников')}
-                        text={
-                          query
-                            ? t('Попробуйте другое имя, телефон или название группы.')
-                            : t('Добавьте первого ученика и месячную стоимость обучения.')
-                        }
-                        action={
-                          !query ? (
-                            <button
-                              className="button primary"
-                              onClick={() => showModal({ type: 'student' })}
-                            >
-                              <Plus size={17} />
-                              {t('Добавить ученика')}{' '}
-                            </button>
-                          ) : undefined
-                        }
+                        title={t('Никого не нашли')}
+                        text={t('Попробуйте другое имя, телефон или название группы.')}
                       />
                     )}
                   </>
@@ -649,8 +604,15 @@ export function App({
           />
         )}
         {modal?.type === 'course' && <CourseForm course={modal.course} onSaved={saved} />}
-        {modal?.type === 'deleteCourse' && (
-          <DeleteCourse course={modal.course} onSaved={saved} onCancel={close} />
+        {modal?.type === 'editGroup' && (
+          <GroupEditor
+            group={modal.group}
+            onSaved={saved}
+            onDeleted={() => {
+              selectGroup(groups.find((row) => row.id !== modal.group.id)?.id ?? 0);
+              saved(t('Группа удалена'));
+            }}
+          />
         )}
         {modal?.type === 'history' && <History student={modal.student} />}
         {modal?.type === 'delete' && (

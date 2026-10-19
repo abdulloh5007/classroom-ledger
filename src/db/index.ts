@@ -9,7 +9,7 @@ export function openDatabase(path: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
   const version = db.pragma('user_version', { simple: true }) as number;
-  if (version > 6) {
+  if (version > 7) {
     db.close();
     throw new Error('Версия БД новее приложения');
   }
@@ -179,5 +179,28 @@ export function openDatabase(path: string): Database.Database {
       if (db.open) db.pragma('foreign_keys = ON');
     }
   }
+  if (version < 7)
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS course_tariffs (
+          course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+          effective_month TEXT NOT NULL,
+          monthly_amount INTEGER NOT NULL CHECK(typeof(monthly_amount)='integer' AND monthly_amount BETWEEN 1 AND 1000000000000),
+          PRIMARY KEY(course_id,effective_month)
+        );
+        INSERT OR IGNORE INTO course_tariffs(course_id,effective_month,monthly_amount)
+          SELECT id,'1900-01',monthly_amount FROM courses;
+        CREATE TRIGGER IF NOT EXISTS course_initial_tariff AFTER INSERT ON courses BEGIN
+          INSERT INTO course_tariffs(course_id,effective_month,monthly_amount) VALUES(NEW.id,'1900-01',NEW.monthly_amount);
+        END;
+        CREATE TRIGGER IF NOT EXISTS course_tariff_version AFTER UPDATE OF monthly_amount ON courses
+        WHEN NEW.monthly_amount<>OLD.monthly_amount BEGIN
+          INSERT INTO course_tariffs(course_id,effective_month,monthly_amount)
+          VALUES(NEW.id,strftime('%Y-%m','now','+5 hours','start of month','+1 month'),NEW.monthly_amount)
+          ON CONFLICT(course_id,effective_month) DO UPDATE SET monthly_amount=excluded.monthly_amount;
+        END;
+        PRAGMA user_version=7;
+      `);
+    })();
   return db;
 }

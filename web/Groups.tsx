@@ -1,8 +1,9 @@
+import { moneyInput, parseMoneyInput } from '../src/money';
 import { useState, type FormEvent } from 'react';
-import { Check, Plus } from 'lucide-react';
-import { groupSchema, type Course, type Group } from '../src/contracts';
+import { Check, Plus, Trash2 } from 'lucide-react';
+import { groupPatchSchema, groupSchema, type Course, type Group } from '../src/contracts';
 import { api, ApiError } from './api';
-import { Spinner, StudentSelect } from './components';
+import { AmountField, ConfirmDelete, Spinner, StudentSelect } from './components';
 import { useI18n } from './i18n';
 
 export function GroupForm({
@@ -86,12 +87,12 @@ export function GroupForm({
           />
         </div>
         <p className="form-hint">{t('Все ученики группы учатся на одном курсе.')}</p>
-        {!courses.length && (
+        {
           <button className="button secondary full" type="button" onClick={onCreateCourse}>
             <Plus size={17} />
             {t('Добавить курс')}
           </button>
-        )}
+        }
         {error && (
           <p className="error-message" role="alert">
             {t(error)}
@@ -103,5 +104,156 @@ export function GroupForm({
         </button>
       </fieldset>
     </form>
+  );
+}
+
+export function GroupEditor({
+  group,
+  onSaved,
+  onDeleted,
+}: {
+  group: Group;
+  onSaved: (text: string) => void;
+  onDeleted: () => void;
+}) {
+  const { t } = useI18n();
+  const [name, setName] = useState(group.name);
+  const [courseName, setCourseName] = useState(group.courseName);
+  const [amount, setAmount] = useState(moneyInput(group.monthlyAmount, group.currency));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [errors, setErrors] = useState<Record<string, string[]>>({});
+  const [confirm, setConfirm] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    const parsed = groupPatchSchema.safeParse({
+      name,
+      courseName,
+      monthlyAmount: parseMoneyInput(amount, group.currency),
+    });
+    if (!parsed.success) {
+      setErrors(parsed.error.flatten().fieldErrors);
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setErrors({});
+    try {
+      await api(`/groups/${group.id}`, { method: 'PATCH', body: JSON.stringify(parsed.data) });
+      onSaved(t('Группа обновлена'));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Не удалось сохранить. Повторите попытку.');
+      if (error instanceof ApiError) setErrors(error.fields);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove() {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/groups/${group.id}`, { method: 'DELETE' });
+      setConfirm(false);
+      onDeleted();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Не удалось сохранить. Повторите попытку.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <form className="form" onSubmit={submit} noValidate aria-busy={busy}>
+        <fieldset disabled={busy}>
+          {[
+            {
+              id: 'edit-group-name',
+              key: 'name',
+              label: t('Название группы'),
+              value: name,
+              onChange: setName,
+            },
+            {
+              id: 'edit-course-name',
+              key: 'courseName',
+              label: t('Название курса'),
+              value: courseName,
+              onChange: setCourseName,
+            },
+          ].map((field) => (
+            <label className="field" key={field.id} htmlFor={field.id}>
+              <span>{field.label}</span>
+              <input
+                id={field.id}
+                value={field.value}
+                maxLength={80}
+                required
+                onChange={(event) => {
+                  field.onChange(event.target.value);
+                  setErrors({});
+                }}
+                aria-invalid={Boolean(errors[field.key])}
+                aria-describedby={errors[field.key] ? `${field.id}-error` : undefined}
+              />
+              {errors[field.key] && (
+                <span className="field-error" id={`${field.id}-error`}>
+                  {t(errors[field.key]![0]!)}
+                </span>
+              )}
+            </label>
+          ))}
+          <AmountField
+            id="edit-group-amount"
+            label={t('Оплата в месяц')}
+            value={amount}
+            currency={group.currency}
+            onChange={(value) => {
+              setAmount(value);
+              setErrors({});
+            }}
+            error={errors.monthlyAmount?.[0]}
+          />
+          <p className="form-hint">
+            {t(
+              'Новая стоимость действует со следующего месяца. История и тарифы прошлых месяцев сохраняются.',
+            )}
+          </p>
+          {group.courseName && (
+            <p className="form-hint">{t('Изменения курса применяются ко всем его группам.')}</p>
+          )}
+          {error && !confirm && (
+            <p className="error-message" role="alert">
+              {t(error)}
+            </p>
+          )}
+          <button className="button primary full" type="submit" disabled={busy}>
+            {busy ? <Spinner /> : <Check size={18} />}
+            {t('Сохранить изменения')}
+          </button>
+          <button
+            className="button secondary full danger-text"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setError('');
+              setConfirm(true);
+            }}
+          >
+            <Trash2 size={17} />
+            {t('Удалить группу')}
+          </button>
+        </fieldset>
+      </form>
+      <ConfirmDelete
+        open={confirm}
+        busy={busy}
+        error={error}
+        description={t('Группа, её ученики и оплаты будут удалены. Другие группы сохранятся.')}
+        onCancel={() => setConfirm(false)}
+        onConfirm={() => void remove()}
+      />
+    </>
   );
 }

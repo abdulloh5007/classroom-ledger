@@ -53,6 +53,14 @@ export const courseEnrollmentSchema = legacyStudentSchema.pick({ name: true, pho
 export const groupSchema = z
   .object({ name: z.string().trim().min(1, 'Введите название группы').max(80), courseId: idSchema })
   .strict();
+export const groupPatchSchema = z
+  .object({
+    name: groupSchema.shape.name.optional(),
+    courseName: courseSchema.shape.name.optional(),
+    monthlyAmount: moneySchema.optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, 'Нет полей для изменения');
 export const studentEnrollmentSchema = legacyStudentSchema
   .pick({ name: true, phone: true })
   .extend({

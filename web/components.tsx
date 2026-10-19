@@ -70,7 +70,8 @@ export function Sheet({
               }}
               onCloseAutoFocus={(event) => {
                 event.preventDefault();
-                returnFocus.current?.focus();
+                if (returnFocus.current?.isConnected) returnFocus.current.focus();
+                else document.querySelector<HTMLButtonElement>('.wallet-more')?.focus();
               }}
             >
               <motion.section
@@ -278,5 +279,102 @@ export function Empty({
       <p>{text}</p>
       {action}
     </motion.div>
+  );
+}
+
+export function ConfirmDelete({
+  open,
+  busy,
+  error,
+  description,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  busy: boolean;
+  error: string;
+  description: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useI18n();
+  const reduced = useReducedMotion();
+  const cancel = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  return (
+    <Dialog.Root
+      open={open}
+      onOpenChange={(value) => {
+        if (!value && !busy) onCancel();
+      }}
+    >
+      <AnimatePresence>
+        {open && (
+          <Dialog.Portal forceMount>
+            <Dialog.Overlay asChild forceMount>
+              <motion.div
+                className="overlay confirm-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: reduced ? 0 : 0.2 }}
+              />
+            </Dialog.Overlay>
+            <Dialog.Content
+              forceMount
+              asChild
+              role="alertdialog"
+              onOpenAutoFocus={(event) => {
+                event.preventDefault();
+                returnFocus.current =
+                  document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                cancel.current?.focus();
+              }}
+              onCloseAutoFocus={(event) => {
+                event.preventDefault();
+                if (returnFocus.current?.isConnected) returnFocus.current.focus();
+                else document.querySelector<HTMLButtonElement>('.wallet-more')?.focus();
+              }}
+              onEscapeKeyDown={(event) => {
+                if (busy) event.preventDefault();
+              }}
+              onPointerDownOutside={(event) => {
+                if (busy) event.preventDefault();
+              }}
+            >
+              <motion.div
+                className="confirm-dialog"
+                initial={{ opacity: 0, scale: reduced ? 1 : 0.94, y: reduced ? 0 : 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: reduced ? 1 : 0.96, y: reduced ? 0 : 6 }}
+                transition={{ duration: reduced ? 0 : 0.22, ease: [0.32, 0.72, 0, 1] }}
+              >
+                <Dialog.Title>{t('Действия необратимы. Вы согласны?')}</Dialog.Title>
+                <Dialog.Description className="sr-only">{description}</Dialog.Description>
+                {error && (
+                  <p className="error-message" role="alert">
+                    {t(error)}
+                  </p>
+                )}
+                <div className="confirm-actions">
+                  <button
+                    ref={cancel}
+                    className="button secondary"
+                    disabled={busy}
+                    onClick={onCancel}
+                  >
+                    {t('Отмена')}
+                  </button>
+                  <button className="button destructive" disabled={busy} onClick={onConfirm}>
+                    {busy ? <Spinner /> : null}
+                    {t('Удалить всё')}
+                  </button>
+                </div>
+              </motion.div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        )}
+      </AnimatePresence>
+    </Dialog.Root>
   );
 }

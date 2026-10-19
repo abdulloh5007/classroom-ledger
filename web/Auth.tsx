@@ -14,7 +14,7 @@ interface Session {
 }
 
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {
-  const { t, language, setLanguage } = useI18n();
+  const { t } = useI18n();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -76,13 +76,6 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
           <span>{t('класс')}</span>
         </a>
         <div className="login-controls">
-          <button
-            className="icon-button"
-            aria-label={t('Язык интерфейса')}
-            onClick={() => setLanguage(language === 'ru' ? 'uz' : 'ru')}
-          >
-            {language === 'ru' ? 'UZ' : 'RU'}
-          </button>
           <button
             className="icon-button login-theme"
             aria-label={dark ? t('Включить светлую тему') : t('Включить тёмную тему')}
