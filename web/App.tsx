@@ -237,13 +237,8 @@ export function App({
           totalStudents={students.length}
           ready={ready}
           onMonthChange={selectMonth}
-          groupName={
-            group
-              ? group.name === group.courseName
-                ? group.name
-                : `${group.name} · ${group.courseName}`
-              : ''
-          }
+          groupName={group?.name ?? ''}
+          courseName={group?.courseName ?? ''}
           onCreateGroup={createGroup}
           onEditGroup={editGroup}
           onSelectGroup={changeGroup}
@@ -335,18 +330,16 @@ export function App({
               >
                 {tab === 'debtors' ? (
                   <>
-                    {!future && students.length > 0 && (
-                      <div className="section-label compact-label">
-                        <h2>
-                          {paymentStatus === 'all'
-                            ? t('Оплаты за месяц')
-                            : paymentStatus === 'paid'
-                              ? t('Оплатили')
-                              : t('Ожидают оплаты')}
-                        </h2>
-                        <PaymentFilter value={paymentStatus} onChange={setPaymentStatus} />
-                      </div>
-                    )}
+                    <div className="section-label compact-label">
+                      <h2>
+                        {paymentStatus === 'all'
+                          ? t('Оплаты за месяц')
+                          : paymentStatus === 'paid'
+                            ? t('Оплатили')
+                            : t('Ожидают оплаты')}
+                      </h2>
+                      <PaymentFilter value={paymentStatus} onChange={setPaymentStatus} />
+                    </div>
                     <div className="card-list">
                       <AnimatePresence initial={false}>
                         {debtors.map((debtor) => (

@@ -190,7 +190,9 @@ export function MonthPicker({
   onDateChange,
   className,
   id,
+  compact = false,
 }: {
+  compact?: boolean;
   date?: string;
   onDateChange?: (date: string) => void;
   className?: string;
@@ -246,7 +248,18 @@ export function MonthPicker({
             exit={{ opacity: 0, x: reduced ? 0 : direction * -8 }}
             transition={{ duration: reduced ? 0 : 0.16 }}
           >
-            {label}
+            <span className={compact ? 'month-label-full' : undefined}>{label}</span>
+            {compact && (
+              <span className="month-label-short" aria-hidden="true">
+                {new Intl.DateTimeFormat(locale, {
+                  month: 'short',
+                  year: 'numeric',
+                  timeZone: 'UTC',
+                })
+                  .format(new Date(`${month}-01T00:00:00Z`))
+                  .replace(' г.', '')}
+              </span>
+            )}
           </motion.span>
         </AnimatePresence>
         <ChevronDown size={14} className="month-chevron" />

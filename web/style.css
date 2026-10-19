@@ -5,11 +5,13 @@
   --tab-track: #eaeaea;
   --tab-selected: #fff;
   --surface: #fff;
+  --panel: #eaeaea;
+  --panel-line: #dedede;
   --subtle: #f5f5f5;
   --hover: #ededed;
   --ink: #171717;
   --muted: #666666;
-  --faint: #707070;
+  --faint: #666666;
   --line: #eaeaea;
   --strong-line: #d4d4d4;
   --primary: #171717;
@@ -33,6 +35,8 @@
     --tab-track: #171717;
     --tab-selected: #333333;
     --surface: #171717;
+    --panel: #171717;
+    --panel-line: #ffffff12;
     --subtle: #222222;
     --hover: #2a2a2a;
     --ink: #ededed;
@@ -56,6 +60,8 @@
   --tab-track: #171717;
   --tab-selected: #333333;
   --surface: #171717;
+  --panel: #171717;
+  --panel-line: #ffffff12;
   --subtle: #222222;
   --hover: #2a2a2a;
   --ink: #ededed;
@@ -1965,4 +1971,130 @@ html.theme-revealing::view-transition-old(root) {
 .wallet-group-name {
   position: relative;
   z-index: 3;
+}
+
+/* Filled neutral panels remain distinct from the page in the light theme. */
+.wallet-hero,
+.debtor-card {
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+}
+.wallet-hero {
+  border-top: 0;
+}
+.debtor-card .progress {
+  background: color-mix(in srgb, var(--ink) 13%, var(--panel));
+}
+.student-list {
+  display: grid;
+  gap: 10px;
+  overflow: visible;
+}
+.student-row {
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 22px;
+  padding: 18px;
+}
+.student-row + .student-row {
+  border-top: 1px solid var(--panel-line);
+}
+.hero-top-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding-right: 0;
+  min-height: 52px;
+}
+.hero-top-row .wallet-month {
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+}
+.hero-top-row .wallet-month .month-label {
+  font-size: 14px;
+  white-space: nowrap;
+}
+.hero-top-row .wallet-more {
+  position: relative;
+  top: auto;
+  right: auto;
+  justify-self: end;
+}
+.hero-top-row .wallet-group-name {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  gap: 0;
+  margin: 0;
+  color: var(--ink);
+}
+.hero-group-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  max-width: 100%;
+  text-align: center;
+}
+.hero-group-title {
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.hero-group-course {
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.hero-top-row .marquee {
+  max-width: 100%;
+  text-align: center;
+}
+.hero-top-row .marquee-track {
+  margin-inline: auto;
+}
+.hero-top-row .marquee[data-overflow='true'] .marquee-track {
+  margin-inline: 0;
+}
+.hero-top-row .group-edit-button {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  translate: 0 -50%;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  color: var(--muted);
+}
+.month-label-short {
+  display: none;
+}
+@media (max-width: 560px) {
+  .hero-top-row .month-label-full {
+    display: none;
+  }
+  .hero-top-row .month-label-short {
+    display: inline;
+  }
+  .hero-top-row .wallet-month .month-label {
+    font-size: 12px;
+  }
+}
+
+.hero-group-copy {
+  width: 100%;
+}
+.marquee:not([data-overflow='true']) .marquee-copy {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .hero-top-row .wallet-month {
+    gap: 3px;
+  }
 }

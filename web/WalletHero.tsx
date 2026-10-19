@@ -17,6 +17,7 @@ export const WalletHero = memo(function WalletHero({
   ready,
   onMonthChange,
   groupName,
+  courseName,
   onCreateGroup,
   onEditGroup,
   onSelectGroup,
@@ -31,6 +32,7 @@ export const WalletHero = memo(function WalletHero({
   ready: boolean;
   onMonthChange: (month: string) => void;
   groupName: string;
+  courseName: string;
   onCreateGroup: () => void;
   onEditGroup: () => void;
   onSelectGroup: (id: number) => void;
@@ -95,28 +97,40 @@ export const WalletHero = memo(function WalletHero({
         }
       }}
     >
-      <GroupMenu
-        onCreate={onCreateGroup}
-        onSelect={onSelectGroup}
-        groups={groups}
-        activeId={groupId}
-        ready={ready}
-      />
       <div className="hero-top-row">
-        <MonthPicker month={month} direction={direction} onChange={onMonthChange} />
+        <MonthPicker month={month} direction={direction} onChange={onMonthChange} compact />
+        <div
+          className="wallet-group-name"
+          title={[groupName, courseName].filter(Boolean).join(' · ')}
+        >
+          <div className="hero-group-copy">
+            <div className="hero-group-title">
+              <Marquee text={ready ? groupName || t('Нет групп') : t('Загрузка…')} />
+            </div>
+            {ready && courseName && courseName !== groupName && (
+              <div className="hero-group-course">
+                <Marquee text={courseName} />
+              </div>
+            )}
+          </div>
+          {ready && groupId && (
+            <button
+              className="icon-button group-edit-button"
+              aria-label={t('Изменить группу')}
+              onClick={onEditGroup}
+            >
+              <Pencil size={15} />
+            </button>
+          )}
+        </div>
+        <GroupMenu
+          onCreate={onCreateGroup}
+          onSelect={onSelectGroup}
+          groups={groups}
+          activeId={groupId}
+          ready={ready}
+        />
       </div>
-      <p className="wallet-group-name" title={groupName}>
-        <Marquee text={ready ? groupName || t('Нет групп') : t('Загрузка…')} />
-        {ready && groupId && (
-          <button
-            className="icon-button group-edit-button"
-            aria-label={t('Изменить группу')}
-            onClick={onEditGroup}
-          >
-            <Pencil size={14} />
-          </button>
-        )}
-      </p>
       <div className="wallet-balance-area">
         <motion.div
           ref={carousel}
