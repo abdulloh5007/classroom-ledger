@@ -1,0 +1,55 @@
+{
+  "name": "ecomdev-tuition-ledger",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && tsc -p tsconfig.server.json && vite build",
+    "start": "node dist/server/main.js",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "seed": "tsx scripts/seed.ts"
+  },
+  "dependencies": {
+    "@fastify/middie": "9.3.5",
+    "@fastify/static": "10.1.6",
+    "@fontsource/geist": "5.3.0",
+    "@radix-ui/react-dialog": "1.3.1",
+    "@radix-ui/react-select": "2.4.1",
+    "@radix-ui/react-tooltip": "1.4.1",
+    "better-sqlite3": "12.11.1",
+    "dotenv": "16.6.1",
+    "fastify": "5.12.7",
+    "framer-motion": "12.43.0",
+    "grammy": "1.46.0",
+    "lucide-react": "0.468.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "4.7.0",
+    "eslint": "9.39.5",
+    "eslint-plugin-react-hooks": "5.2.0",
+    "eslint-plugin-react-refresh": "0.4.26",
+    "globals": "15.15.0",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
+    "vite": "6.4.4",
+    "vitest": "4.1.12"
+  }
+}
