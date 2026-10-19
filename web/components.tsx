@@ -1,3 +1,4 @@
+import { FieldHelp } from './FieldHelp';
 import type { Currency } from '../src/contracts';
 import { currencyUnit } from '../src/money';
 import { useI18n } from './i18n';
@@ -200,8 +201,10 @@ export function AmountField({
   onMax,
   disabled,
   currency = 'UZS',
+  hint,
 }: {
   currency?: Currency;
+  hint?: string;
   id: string;
   max?: number;
   disabled?: boolean;
@@ -218,9 +221,12 @@ export function AmountField({
     whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + (fraction === undefined ? '' : ',' + fraction);
   return (
     <div className="field">
-      <label id={`${id}-label`} htmlFor={id}>
-        {label}
-      </label>
+      <div className={`amount-label-row${hint ? ' has-help' : ''}`}>
+        <label id={`${id}-label`} htmlFor={id}>
+          {label}
+        </label>
+        {hint && <FieldHelp text={hint} />}
+      </div>
       <div className={`amount-input${onMax ? ' with-max' : ''}`}>
         <input
           id={id}

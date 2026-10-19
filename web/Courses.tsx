@@ -96,6 +96,13 @@ export function CourseForm({
           currency={currency}
           id="course-amount"
           label={t('Оплата в месяц')}
+          hint={
+            course
+              ? t(
+                  'Новая стоимость действует со следующего месяца. История и тарифы прошлых месяцев сохраняются.',
+                )
+              : undefined
+          }
           value={amount}
           onChange={(value) => {
             setAmount(value);
@@ -103,13 +110,6 @@ export function CourseForm({
           }}
           error={errors.monthlyAmount?.[0]}
         />
-        {course && (
-          <p className="form-hint">
-            {t(
-              'Новая стоимость действует со следующего месяца. История и тарифы прошлых месяцев сохраняются.',
-            )}
-          </p>
-        )}
         {error && (
           <p className="error-message" role="alert">
             {t(error)}

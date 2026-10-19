@@ -16,7 +16,6 @@ export const WalletHero = memo(function WalletHero({
   totalStudents,
   ready,
   onMonthChange,
-  groupName,
   courseName,
   onCreateGroup,
   onEditGroup,
@@ -31,7 +30,6 @@ export const WalletHero = memo(function WalletHero({
   totalStudents: number;
   ready: boolean;
   onMonthChange: (month: string) => void;
-  groupName: string;
   courseName: string;
   onCreateGroup: () => void;
   onEditGroup: () => void;
@@ -99,19 +97,11 @@ export const WalletHero = memo(function WalletHero({
     >
       <div className="hero-top-row">
         <MonthPicker month={month} direction={direction} onChange={onMonthChange} compact />
-        <div
-          className="wallet-group-name"
-          title={[groupName, courseName].filter(Boolean).join(' · ')}
-        >
+        <div className="wallet-group-name" title={courseName}>
           <div className="hero-group-copy">
             <div className="hero-group-title">
-              <Marquee text={ready ? groupName || t('Нет групп') : t('Загрузка…')} />
+              <Marquee text={ready ? courseName || t('Нет курсов') : t('Загрузка…')} />
             </div>
-            {ready && courseName && courseName !== groupName && (
-              <div className="hero-group-course">
-                <Marquee text={courseName} />
-              </div>
-            )}
           </div>
           {ready && groupId && (
             <button

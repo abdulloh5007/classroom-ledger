@@ -2045,12 +2045,6 @@ html.theme-revealing::view-transition-old(root) {
   font-weight: 600;
   line-height: 1.4;
 }
-.hero-group-course {
-  min-width: 0;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--muted);
-}
 .hero-top-row .marquee {
   max-width: 100%;
   text-align: center;
@@ -2096,5 +2090,67 @@ html.theme-revealing::view-transition-old(root) {
 @media (max-width: 560px) {
   .hero-top-row .wallet-month {
     gap: 3px;
+  }
+}
+
+.amount-label-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.amount-label-row.has-help {
+  min-height: 28px;
+}
+.field-help-trigger {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  margin-block: -8px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+}
+.field-help-trigger:hover,
+.field-help-trigger[data-state='open'] {
+  background: var(--hover);
+}
+.field-help-popover {
+  z-index: 85;
+  width: min(300px, calc(100vw - 32px));
+  padding: 15px 16px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 12px 36px #0002;
+  font-size: 13px;
+  line-height: 1.6;
+  transform-origin: var(--radix-popover-content-transform-origin);
+}
+.field-help-popover p {
+  margin: 0;
+}
+.field-help-popover[data-state='open'] {
+  animation: help-in 220ms var(--curve);
+}
+.field-help-popover[data-state='closed'] {
+  animation: help-out 180ms var(--curve);
+}
+@keyframes help-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes help-out {
+  to {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.97);
   }
 }

@@ -237,7 +237,6 @@ export function App({
           totalStudents={students.length}
           ready={ready}
           onMonthChange={selectMonth}
-          groupName={group?.name ?? ''}
           courseName={group?.courseName ?? ''}
           onCreateGroup={createGroup}
           onEditGroup={editGroup}

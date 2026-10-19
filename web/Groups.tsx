@@ -207,6 +207,7 @@ export function GroupEditor({
           <AmountField
             id="edit-group-amount"
             label={t('Оплата в месяц')}
+            hint={`${t('Новая стоимость действует со следующего месяца. История и тарифы прошлых месяцев сохраняются.')} ${t('Изменения курса применяются ко всем его группам.')}`}
             value={amount}
             currency={group.currency}
             onChange={(value) => {
@@ -215,14 +216,6 @@ export function GroupEditor({
             }}
             error={errors.monthlyAmount?.[0]}
           />
-          <p className="form-hint">
-            {t(
-              'Новая стоимость действует со следующего месяца. История и тарифы прошлых месяцев сохраняются.',
-            )}
-          </p>
-          {group.courseName && (
-            <p className="form-hint">{t('Изменения курса применяются ко всем его группам.')}</p>
-          )}
           {error && !confirm && (
             <p className="error-message" role="alert">
               {t(error)}

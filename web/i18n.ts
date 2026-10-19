@@ -4,6 +4,8 @@ import { useSyncExternalStore } from 'react';
 
 export type Language = 'ru' | 'uz';
 const uz: Record<string, string> = {
+  'Пояснение к оплате в месяц': 'Oylik to‘lov haqida izoh',
+  'О стоимости курса': 'Kurs narxi haqida',
   'Изменить группу': 'Guruhni tahrirlash',
   'Группа обновлена': 'Guruh yangilandi',
   'Группа удалена': 'Guruh o‘chirildi',
