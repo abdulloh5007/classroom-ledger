@@ -17,7 +17,7 @@ beforeEach(() => {
     name: 'Test',
     phone: '+998901234567',
     group: 'Test',
-    monthlyAmount: 1000,
+    monthlyAmount: 10000,
   });
 });
 afterEach(async () => {

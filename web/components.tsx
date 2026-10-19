@@ -1,3 +1,4 @@
+import { useI18n } from './i18n';
 import { useRef, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Select from '@radix-ui/react-select';
@@ -34,6 +35,8 @@ export function Sheet({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
+
   const controls = useDragControls();
   const returnFocus = useRef<HTMLElement | null>(null);
   const reduced = useReducedMotion();
@@ -98,9 +101,11 @@ export function Sheet({
                 <header className="sheet-header">
                   <div>
                     <Dialog.Title>{title}</Dialog.Title>
-                    <Dialog.Description>{description}</Dialog.Description>
+                    <Dialog.Description className={description ? undefined : 'sr-only'}>
+                      {description || title}
+                    </Dialog.Description>
                   </div>
-                  <Dialog.Close className="icon-button" aria-label="Закрыть">
+                  <Dialog.Close className="icon-button" aria-label={t('Закрыть')}>
                     <X size={20} />
                   </Dialog.Close>
                 </header>
@@ -119,26 +124,34 @@ export function StudentSelect({
   options,
   disabled,
   error,
+  id = 'student-select',
+  label,
+  placeholder,
 }: {
   value: string;
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
+  id?: string;
+  label?: string;
+  placeholder?: string;
   disabled?: boolean;
   error?: string;
 }) {
+  const { t } = useI18n();
+
   return (
     <>
-      <label className="field-label" id="student-select-label">
-        Ученик
+      <label className="field-label" id={`${id}-label`}>
+        {label ?? t('Ученик')}{' '}
       </label>
       <Select.Root value={value} onValueChange={onChange} disabled={disabled} required>
         <Select.Trigger
           className="select-trigger"
-          aria-labelledby="student-select-label"
+          aria-labelledby={`${id}-label`}
           aria-invalid={Boolean(error)}
-          aria-describedby={error ? 'student-select-error' : undefined}
+          aria-describedby={error ? `${id}-error` : undefined}
         >
-          <Select.Value placeholder="Выберите ученика" />
+          <Select.Value placeholder={placeholder ?? t('Выберите ученика')} />
           <Select.Icon>
             <ChevronDown className="select-chevron" size={17} />
           </Select.Icon>
@@ -146,6 +159,7 @@ export function StudentSelect({
         <Select.Portal>
           <Select.Content
             className="select-content"
+            aria-labelledby={`${id}-label`}
             position="popper"
             sideOffset={6}
             collisionPadding={16}
@@ -166,8 +180,8 @@ export function StudentSelect({
         </Select.Portal>
       </Select.Root>
       {error && (
-        <span className="field-error" id="student-select-error">
-          {error}
+        <span className="field-error" id={`${id}-error`}>
+          {t(error)}
         </span>
       )}
     </>
@@ -179,20 +193,31 @@ export function AmountField({
   value,
   onChange,
   error,
+  max,
+  onMax,
+  disabled,
 }: {
   id: string;
+  max?: number;
+  disabled?: boolean;
+  onMax?: () => void;
   label: string;
   value: string;
   onChange: (value: string) => void;
   error?: string;
 }) {
+  const { t } = useI18n();
+
   const display = value.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   return (
-    <label className="field" htmlFor={id}>
-      <span id={`${id}-label`}>{label}</span>
-      <div className="amount-input">
+    <div className="field">
+      <label id={`${id}-label`} htmlFor={id}>
+        {label}
+      </label>
+      <div className={`amount-input${onMax ? ' with-max' : ''}`}>
         <input
           id={id}
+          disabled={disabled}
           aria-labelledby={`${id}-label`}
           name={id}
           inputMode="numeric"
@@ -207,14 +232,26 @@ export function AmountField({
           aria-describedby={error ? `${id}-error` : undefined}
           placeholder="0"
         />
-        <span>сум</span>
+        {onMax ? (
+          <button
+            className="amount-max"
+            type="button"
+            onClick={onMax}
+            disabled={!max}
+            aria-label={t('Внести весь остаток')}
+          >
+            MAX
+          </button>
+        ) : (
+          <span>{t('сум')}</span>
+        )}
       </div>
       {error && (
         <span id={`${id}-error`} className="field-error">
-          {error}
+          {t(error)}
         </span>
       )}
-    </label>
+    </div>
   );
 }
 export function Empty({

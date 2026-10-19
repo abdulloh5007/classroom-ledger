@@ -1,3 +1,4 @@
+import { useI18n } from './i18n';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { BookOpen, Eye, EyeOff, Moon, Sun } from 'lucide-react';
@@ -13,6 +14,8 @@ interface Session {
 }
 
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {
+  const { t, language, setLanguage } = useI18n();
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [visible, setVisible] = useState(false);
@@ -58,7 +61,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
         }),
       );
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось войти. Попробуйте снова.');
+      setError(error instanceof Error ? error.message : t('Не удалось войти. Попробуйте снова.'));
     } finally {
       setBusy(false);
     }
@@ -66,19 +69,28 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
   return (
     <div className="login-page">
       <header className="login-header">
-        <a className="brand" href="/" aria-label="Класс — главная">
+        <a className="brand" href="/" aria-label={t('Класс — главная')}>
           <span className="brand-mark">
             <BookOpen size={18} />
           </span>
-          <span>класс</span>
+          <span>{t('класс')}</span>
         </a>
-        <button
-          className="icon-button login-theme"
-          aria-label={dark ? 'Включить светлую тему' : 'Включить тёмную тему'}
-          onClick={(event) => void revealTheme(event.currentTarget, toggleTheme)}
-        >
-          {dark ? <Sun size={19} /> : <Moon size={19} />}
-        </button>
+        <div className="login-controls">
+          <button
+            className="icon-button"
+            aria-label={t('Язык интерфейса')}
+            onClick={() => setLanguage(language === 'ru' ? 'uz' : 'ru')}
+          >
+            {language === 'ru' ? 'UZ' : 'RU'}
+          </button>
+          <button
+            className="icon-button login-theme"
+            aria-label={dark ? t('Включить светлую тему') : t('Включить тёмную тему')}
+            onClick={(event) => void revealTheme(event.currentTarget, toggleTheme)}
+          >
+            {dark ? <Sun size={19} /> : <Moon size={19} />}
+          </button>
+        </div>
       </header>
       <main className="login-main">
         <motion.section
@@ -91,11 +103,11 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
           <div className="login-emblem" aria-hidden="true">
             <BookOpen size={27} strokeWidth={1.6} />
           </div>
-          <h1 id="login-title">Вход</h1>
+          <h1 id="login-title">{t('Вход')}</h1>
           <form className="login-form" onSubmit={submit} noValidate aria-busy={busy}>
             <label className="field" htmlFor="login-username">
               <span className="sr-only" id="login-username-label">
-                Логин
+                {t('Логин')}{' '}
               </span>
               <input
                 id="login-username"
@@ -105,7 +117,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
                 autoCapitalize="none"
                 spellCheck={false}
                 value={username}
-                placeholder="Логин"
+                placeholder={t('Логин')}
                 onChange={(event) => {
                   setUsername(event.target.value);
                   setFields((value) => ({ ...value, username: undefined }));
@@ -119,13 +131,13 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
               />
               {fields.username && (
                 <span id="login-username-error" className="field-error">
-                  {fields.username}
+                  {t(fields.username)}
                 </span>
               )}
             </label>
             <label className="field" htmlFor="login-password">
               <span className="sr-only" id="login-password-label">
-                Пароль
+                {t('Пароль')}{' '}
               </span>
               <div className="login-password">
                 <input
@@ -135,7 +147,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
                   type={visible ? 'text' : 'password'}
                   autoComplete="current-password"
                   value={password}
-                  placeholder="Пароль"
+                  placeholder={t('Пароль')}
                   onChange={(event) => {
                     setPassword(event.target.value);
                     setFields((value) => ({ ...value, password: undefined }));
@@ -150,7 +162,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
                 <button
                   type="button"
                   className="icon-button"
-                  aria-label={visible ? 'Скрыть пароль' : 'Показать пароль'}
+                  aria-label={visible ? t('Скрыть пароль') : t('Показать пароль')}
                   aria-pressed={visible}
                   onClick={() => setVisible((value) => !value)}
                   disabled={busy}
@@ -160,7 +172,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
               </div>
               {fields.password && (
                 <span id="login-password-error" className="field-error">
-                  {fields.password}
+                  {t(fields.password)}
                 </span>
               )}
             </label>
@@ -173,7 +185,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                 >
-                  {error}
+                  {t(error)}
                 </motion.p>
               )}
             </AnimatePresence>
@@ -181,10 +193,10 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
               {busy ? (
                 <>
                   <Spinner />
-                  Входим…
+                  {t('Входим…')}{' '}
                 </>
               ) : (
-                <>Войти</>
+                <>{t('Войти')}</>
               )}
             </button>
           </form>
@@ -195,6 +207,8 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
 }
 
 export function Auth() {
+  const { t, language } = useI18n();
+
   const [session, setSession] = useState<Session>();
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -206,10 +220,10 @@ export function Auth() {
       .then(setSession)
       .catch((error: unknown) => {
         if (!controller.signal.aborted)
-          setError(error instanceof Error ? error.message : 'Не удалось подключиться к серверу');
+          setError(error instanceof Error ? error.message : t('Не удалось подключиться к серверу'));
       });
     return () => controller.abort();
-  }, [attempt]);
+  }, [attempt, t]);
   useEffect(() => {
     const expired = () => {
       invalidateHistory();
@@ -224,8 +238,8 @@ export function Auth() {
     if (!session) return;
     const path = authenticated ? '/' : '/login';
     if (window.location.pathname !== path) window.history.replaceState(null, '', path);
-    document.title = authenticated ? 'Класс · Учёт оплат' : 'Вход · Класс';
-  }, [session, authenticated]);
+    document.title = authenticated ? t('Класс · Учёт оплат') : t('Вход · Класс');
+  }, [session, authenticated, language, t]);
   const logout = useCallback(async () => {
     setLoggingOut(true);
     setError('');
@@ -234,11 +248,11 @@ export function Auth() {
       invalidateHistory();
       setSession({ authenticationRequired: true, username: null });
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось выйти');
+      setError(error instanceof Error ? error.message : t('Не удалось выйти'));
     } finally {
       setLoggingOut(false);
     }
-  }, []);
+  }, [t]);
   if (!session)
     return (
       <main className="auth-loading">
@@ -247,15 +261,15 @@ export function Auth() {
         </span>
         {error ? (
           <>
-            <p role="alert">{error}</p>
+            <p role="alert">{t(error)}</p>
             <button className="button secondary" onClick={() => setAttempt((value) => value + 1)}>
-              Повторить
+              {t('Повторить')}{' '}
             </button>
           </>
         ) : (
           <span role="status" className="loading-inline">
             <Spinner />
-            Загрузка…
+            {t('Загрузка…')}{' '}
           </span>
         )}
       </main>
@@ -273,7 +287,7 @@ export function Auth() {
     <>
       {error && (
         <p className="auth-session-error" role="alert">
-          {error}
+          {t(error)}
         </p>
       )}
       <App onLogout={session.authenticationRequired ? logout : undefined} loggingOut={loggingOut} />

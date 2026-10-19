@@ -6,6 +6,23 @@ import type { LedgerService } from './services/ledger.js';
 const paramsSchema = z.object({ id: idSchema }).strict();
 const emptyQuery = z.object({}).strict();
 export function registerRoutes(app: FastifyInstance, service: LedgerService): void {
+  app.get('/courses', async (request) => {
+    emptyQuery.parse(request.query);
+    return service.courses();
+  });
+  app.post('/courses', async (request, reply) => {
+    emptyQuery.parse(request.query);
+    return reply.code(201).send(service.createCourse(request.body));
+  });
+  app.patch('/courses/:id', async (request) => {
+    emptyQuery.parse(request.query);
+    return service.updateCourse(paramsSchema.parse(request.params).id, request.body);
+  });
+  app.delete('/courses/:id', async (request, reply) => {
+    emptyQuery.parse(request.query);
+    service.deleteCourse(paramsSchema.parse(request.params).id);
+    return reply.code(204).send();
+  });
   app.get('/students', async (request) => {
     emptyQuery.parse(request.query);
     return service.students();
@@ -22,6 +39,10 @@ export function registerRoutes(app: FastifyInstance, service: LedgerService): vo
     emptyQuery.parse(request.query);
     service.deleteStudent(paramsSchema.parse(request.params).id);
     return reply.code(204).send();
+  });
+  app.get('/students/:id/balance', async (request) => {
+    const { month } = z.object({ month: monthSchema.optional() }).strict().parse(request.query);
+    return service.balance(paramsSchema.parse(request.params).id, month);
   });
   app.get('/students/:id/payments', async (request) => {
     const query = paymentPageQuery.parse(request.query);

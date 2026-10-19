@@ -1,15 +1,11 @@
+import { useI18n } from './i18n';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
-import { currentMonth, monthLabel } from '../src/calendar';
+import { currentMonth, today } from '../src/calendar';
 
 const ROW = 44;
-const monthNames = Array.from({ length: 12 }, (_, index) =>
-  new Intl.DateTimeFormat('ru-RU', { month: 'long', timeZone: 'UTC' }).format(
-    new Date(Date.UTC(2026, index, 1)),
-  ),
-);
 function Wheel({
   label,
   value,
@@ -190,16 +186,38 @@ export function MonthPicker({
   month,
   direction,
   onChange,
+  date,
+  onDateChange,
+  className,
+  id,
 }: {
+  date?: string;
+  onDateChange?: (date: string) => void;
+  className?: string;
+  id?: string;
   month: string;
   direction: number;
   onChange: (month: string) => void;
 }) {
+  const { t, monthLabel, locale } = useI18n();
+
   const [open, setOpen] = useState(false);
+  const [day, setDay] = useState(Number(date?.slice(8) ?? 1));
   const [year, setYear] = useState(Number(month.slice(0, 4)));
   const [number, setNumber] = useState(Number(month.slice(5)));
   const [resetVersion, setResetVersion] = useState(0);
   const reduced = useReducedMotion();
+  const maxDay = new Date(Date.UTC(year, number, 0)).getUTCDate();
+  const label = date
+    ? new Intl.DateTimeFormat(locale, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      })
+        .format(new Date(`${date}T00:00:00Z`))
+        .replace(' г.', '')
+    : monthLabel(month);
   return (
     <Popover.Root
       open={open}
@@ -207,22 +225,28 @@ export function MonthPicker({
         if (value) {
           setYear(Number(month.slice(0, 4)));
           setNumber(Number(month.slice(5)));
+          setDay(Number(date?.slice(8) ?? 1));
         }
         setOpen(value);
       }}
       modal
     >
-      <Popover.Trigger className="wallet-month" aria-label={`Выбрать месяц: ${monthLabel(month)}`}>
+      <Popover.Trigger
+        type="button"
+        id={id}
+        className={className ?? 'wallet-month'}
+        aria-label={`${date ? t('Выбрать дату') : t('Выбрать месяц')}: ${label}`}
+      >
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
-            key={month}
+            key={date ?? month}
             className="month-label"
             initial={{ opacity: 0, x: reduced ? 0 : direction * 8 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: reduced ? 0 : direction * -8 }}
             transition={{ duration: reduced ? 0 : 0.16 }}
           >
-            {monthLabel(month)}
+            {label}
           </motion.span>
         </AnimatePresence>
         <ChevronDown size={14} className="month-chevron" />
@@ -236,7 +260,7 @@ export function MonthPicker({
               side="bottom"
               sideOffset={10}
               collisionPadding={16}
-              aria-label="Выбор месяца и года"
+              aria-label={t('Выбор месяца и года')}
             >
               <motion.div
                 className="month-popover"
@@ -245,19 +269,33 @@ export function MonthPicker({
                 exit={{ opacity: 0, y: reduced ? 0 : -6, scale: reduced ? 1 : 0.97 }}
                 transition={{ duration: reduced ? 0 : 0.28, ease: [0.32, 0.72, 0, 1] }}
               >
-                <div className="month-wheels">
+                <div className={`month-wheels${date ? ' with-day' : ''}`}>
                   <span className="wheel-selection" aria-hidden="true" />
+                  {date && (
+                    <Wheel
+                      label={t('День')}
+                      value={Math.min(day, maxDay)}
+                      min={1}
+                      max={maxDay}
+                      onChange={setDay}
+                      resetVersion={resetVersion}
+                    />
+                  )}
                   <Wheel
-                    label="Месяц"
+                    label={t('Месяц')}
                     value={number}
                     min={1}
                     max={year === 9999 ? 11 : 12}
-                    format={(value) => monthNames[value - 1]!}
+                    format={(value) =>
+                      new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' }).format(
+                        new Date(Date.UTC(2026, value - 1, 1)),
+                      )
+                    }
                     onChange={setNumber}
                     resetVersion={resetVersion}
                   />
                   <Wheel
-                    label="Год"
+                    label={t('Год')}
                     value={year}
                     min={1900}
                     max={9999}
@@ -270,24 +308,32 @@ export function MonthPicker({
                 </div>
                 <div className="month-picker-actions">
                   <button
+                    type="button"
                     className="button secondary"
                     onClick={() => {
                       const now = currentMonth();
                       setResetVersion((value) => value + 1);
                       setYear(Number(now.slice(0, 4)));
                       setNumber(Number(now.slice(5)));
+                      setDay(Number(today().slice(8)));
                     }}
                   >
-                    Текущий
+                    {t('Текущий')}{' '}
                   </button>
                   <button
+                    type="button"
                     className="button primary"
                     onClick={() => {
-                      onChange(`${year}-${String(number).padStart(2, '0')}`);
+                      const selected = `${year}-${String(number).padStart(2, '0')}`;
+                      if (date && onDateChange)
+                        onDateChange(
+                          `${selected}-${String(Math.min(day, maxDay)).padStart(2, '0')}`,
+                        );
+                      else onChange(selected);
                       setOpen(false);
                     }}
                   >
-                    Готово
+                    {t('Готово')}{' '}
                   </button>
                 </div>
               </motion.div>

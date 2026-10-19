@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react';
+import { useI18n } from './i18n';
+import { memo, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { LogOut } from 'lucide-react';
 import type { Debtor } from '../src/contracts';
-import { currentMonth, shiftMonth, monthLabel } from '../src/calendar';
+import { currentMonth, shiftMonth } from '../src/calendar';
 import { MonthPicker } from './MonthPicker';
 
-export function WalletHero({
+export const WalletHero = memo(function WalletHero({
   month,
   direction,
   months,
@@ -24,6 +25,8 @@ export function WalletHero({
   onLogout?: () => Promise<void>;
   loggingOut: boolean;
 }) {
+  const { t, monthLabel, language, setLanguage } = useI18n();
+
   const reduced = useReducedMotion();
   const carousel = useRef<HTMLDivElement>(null);
   const moved = useRef(false);
@@ -47,7 +50,7 @@ export function WalletHero({
   return (
     <motion.section
       className="wallet-hero"
-      aria-label="Сводка оплат за месяц"
+      aria-label={t('Сводка оплат за месяц')}
       style={{ touchAction: 'pan-y' }}
       onPointerDownCapture={() => {
         moved.current = false;
@@ -74,20 +77,27 @@ export function WalletHero({
       {onLogout && (
         <button
           className="icon-button wallet-logout"
-          aria-label="Выйти"
+          aria-label={t('Выйти')}
           disabled={loggingOut}
           onClick={() => void onLogout()}
         >
           <LogOut size={17} />
         </button>
       )}
+      <button
+        className="icon-button wallet-language"
+        aria-label={t('Язык интерфейса')}
+        onClick={() => setLanguage(language === 'ru' ? 'uz' : 'ru')}
+      >
+        {language === 'ru' ? 'UZ' : 'RU'}
+      </button>
       <MonthPicker month={month} direction={direction} onChange={onMonthChange} />
       <div className="wallet-balance-area">
         <motion.div
           ref={carousel}
           className="wallet-carousel"
-          aria-roledescription="карусель"
-          aria-label="Сумма и число должников по месяцам"
+          aria-roledescription={t('карусель')}
+          aria-label={t('Сумма и число должников по месяцам')}
         >
           <AnimatePresence initial={false}>
             {slides.map(({ key, offset }) => {
@@ -122,7 +132,6 @@ export function WalletHero({
                       relative <= 1
                         ? 1 - relative * 0.08
                         : Math.max(0, 0.92 - (relative - 1) * 1.84),
-                    rotateY: reduced ? 0 : offset * -16,
                   }}
                   exit={{
                     x: `calc(${-direction * 150}% + 0px)`,
@@ -135,18 +144,13 @@ export function WalletHero({
                       : { type: 'spring', stiffness: 290, damping: 32, mass: 0.85 }
                   }
                 >
-                  <strong
-                    className={`wallet-amount${amount.length > 12 ? ' compact' : ''}`}
-                    data-testid={offset === 0 ? 'wallet-amount' : undefined}
-                  >
-                    {amount}
-                    <small>сум</small>
-                  </strong>
+                  <FittedAmount amount={amount} active={offset === 0} />
                   <span
                     className="wallet-debtor-count"
                     data-testid={offset === 0 ? 'wallet-count' : undefined}
                   >
-                    Должники <b>{rows && ready ? `${rows.length} / ${totalStudents}` : '— / —'}</b>
+                    {t('Должники')}{' '}
+                    <b>{rows && ready ? `${rows.length} / ${totalStudents}` : '— / —'}</b>
                   </span>
                 </motion.div>
               );
@@ -158,7 +162,7 @@ export function WalletHero({
         <button
           key={delta}
           className={`wallet-edge ${delta < 0 ? 'previous' : 'next'}`}
-          aria-label={delta < 0 ? 'Предыдущий месяц' : 'Следующий месяц'}
+          aria-label={delta < 0 ? t('Предыдущий месяц') : t('Следующий месяц')}
           disabled={month === (delta < 0 ? '1900-01' : '9999-11')}
           onClick={(event) => {
             if (!moved.current || event.detail === 0) shift(delta);
@@ -167,11 +171,51 @@ export function WalletHero({
       ))}
       <span className="sr-only" role="status">
         {future
-          ? 'Будущий месяц: данных пока нет'
+          ? t('Будущий месяц: данных пока нет')
           : !months[month] || !ready
-            ? 'Загрузка сводки'
-            : `${monthLabel(month)}: к сбору ${months[month]!.reduce((sum, row) => sum + row.debt, 0)} сум, должников ${months[month]!.filter((row) => row.debt > 0).length} из ${totalStudents}`}
+            ? t('Загрузка сводки')
+            : `${monthLabel(month)}: ${months[month]!.reduce((sum, row) => sum + row.debt, 0)} ${t('сум')}, ${t('Должники')} ${months[month]!.filter((row) => row.debt > 0).length} / ${totalStudents}`}
       </span>
     </motion.section>
+  );
+});
+
+function FittedAmount({ amount, active }: { amount: string; active: boolean }) {
+  const { t, language } = useI18n();
+
+  const element = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const text = element.current;
+    const container = text?.parentElement;
+    if (!text || !container) return;
+    const fit = () => {
+      text.style.fontSize = '';
+      const style = getComputedStyle(text);
+      const base = parseFloat(style.fontSize);
+      const available = container.clientWidth * 0.94;
+      const digits = text.firstElementChild as HTMLElement;
+      const suffix = text.lastElementChild as HTMLElement;
+      const gap = parseFloat(style.columnGap) || 0;
+      // Measure untransformed children: a centred overflowing flex row hides
+      // part of its width from scrollWidth, and neighbours are scaled down.
+      const width = digits.scrollWidth;
+      const space = available - suffix.offsetWidth - gap;
+      if (width > space)
+        text.style.fontSize = `${Math.max(14, Math.floor((base * space) / width))}px`;
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [amount, language]);
+  return (
+    <strong
+      ref={element}
+      className="wallet-amount"
+      data-testid={active ? 'wallet-amount' : undefined}
+    >
+      <span>{amount}</span>
+      <small>{t('сум')}</small>
+    </strong>
   );
 }

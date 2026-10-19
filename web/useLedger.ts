@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Debtor, Student } from '../src/contracts';
+import type { Course, Debtor, Student } from '../src/contracts';
 import { currentMonth, shiftMonth } from '../src/calendar';
 import { api } from './api';
 
 export function useLedger(month: string) {
+  const [courses, setCourses] = useState<Course[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [studentsReady, setStudentsReady] = useState(false);
   const [months, setMonths] = useState<Record<string, Debtor[]>>({});
@@ -47,10 +48,14 @@ export function useLedger(month: string) {
   useEffect(() => {
     const controller = new AbortController();
     setStudentsError('');
-    void api<Student[]>('/students', { signal: controller.signal })
-      .then((rows) => {
+    void Promise.all([
+      api<Student[]>('/students', { signal: controller.signal }),
+      api<Course[]>('/courses', { signal: controller.signal }),
+    ])
+      .then(([rows, courses]) => {
         if (!controller.signal.aborted) {
           setStudents(rows);
+          setCourses(courses);
           setStudentsReady(true);
         }
       })
@@ -107,6 +112,7 @@ export function useLedger(month: string) {
   }, []);
   return {
     students,
+    courses,
     months,
     studentsError,
     monthError,

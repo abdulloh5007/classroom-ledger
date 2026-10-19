@@ -22,7 +22,7 @@ export const dateSchema = z
       value <= '9999-11-30'
     );
   }, 'Укажите существующую дату (1900–9999-11)');
-export const studentSchema = z
+const legacyStudentSchema = z
   .object({
     name: z.string().trim().min(1, 'Введите имя').max(100),
     phone: z
@@ -35,13 +35,40 @@ export const studentSchema = z
     monthlyAmount: moneySchema,
   })
   .strict();
-export const studentPatchSchema = studentSchema
+export const courseSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Введите название курса').max(80),
+    monthlyAmount: moneySchema,
+  })
+  .strict();
+export const coursePatchSchema = courseSchema
   .partial()
+  .refine((value) => Object.keys(value).length > 0, 'Нет полей для изменения');
+export const studentEnrollmentSchema = legacyStudentSchema
+  .pick({ name: true, phone: true })
+  .extend({
+    courseId: z.coerce.number().int().positive('Выберите курс').max(Number.MAX_SAFE_INTEGER),
+  });
+export const studentSchema = z.union([studentEnrollmentSchema, legacyStudentSchema]);
+export const studentPatchSchema = z
+  .union([studentEnrollmentSchema.partial(), legacyStudentSchema.partial()])
   .refine((value) => Object.keys(value).length > 0, 'Нет полей для изменения');
 export const paymentSchema = z.object({ amount: moneySchema, date: dateSchema }).strict();
 export type StudentInput = z.infer<typeof studentSchema>;
-export interface Student extends StudentInput {
+export interface Course {
   id: number;
+  name: string;
+  monthlyAmount: number;
+  studentCount: number;
+  createdAt: string;
+}
+export interface Student {
+  id: number;
+  name: string;
+  phone: string;
+  group: string;
+  monthlyAmount: number;
+  courseId: number;
   createdAt: string;
 }
 export interface Payment {

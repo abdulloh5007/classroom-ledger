@@ -13,7 +13,7 @@ it('закрывает финансовые API сессией, не вызыв�
     password: 'test-only-password-123456',
   });
   try {
-    for (const url of ['/students', '/debtors', '/balances']) {
+    for (const url of ['/students', '/debtors', '/balances', '/courses', '/students/1/balance']) {
       const response = await secured.inject(url);
       expect(response.statusCode).toBe(401);
       expect(response.headers['www-authenticate']).toBeUndefined();
@@ -229,7 +229,12 @@ it('balances возвращает нулевые, частичные, полны
     service.createStudent({ ...input, name: `Ученик ${index}` }),
   );
   amounts.forEach((amount, index) => {
-    if (amount) service.addPayment(students[index]!.id, { amount, date: '2026-10-31' });
+    if (amount)
+      db.prepare('INSERT INTO payments(student_id, amount, paid_at) VALUES (?, ?, ?)').run(
+        students[index]!.id,
+        amount,
+        '2026-10-31',
+      );
   });
   service.addPayment(students[0]!.id, { amount: 600000, date: '2026-11-01' });
   const response = await app.inject('/balances?month=2026-10');
@@ -246,4 +251,40 @@ it('balances возвращает нулевые, частичные, полны
   expect((await app.inject('/balances')).json()).toEqual(
     (await app.inject(`/balances?month=${currentMonth()}`)).json(),
   );
+});
+
+it('отклоняет устаревшую/завышенную оплату и возвращает актуальный остаток по месяцу', async () => {
+  const student = new LedgerService(db).createStudent(input);
+  expect((await app.inject(`/students/${student.id}/balance?month=2026-10`)).json()).toEqual({
+    paid: 0,
+    debt: 600000,
+  });
+  const first = await app.inject({
+    method: 'POST',
+    url: `/students/${student.id}/payments`,
+    payload: { amount: 400000, date: '2026-10-01' },
+  });
+  expect(first.statusCode).toBe(201);
+  const stale = await app.inject({
+    method: 'POST',
+    url: `/students/${student.id}/payments`,
+    payload: { amount: 400000, date: '2026-10-01' },
+  });
+  expect(stale.statusCode).toBe(400);
+  expect(stale.json()).toMatchObject({
+    details: {
+      remaining: 200000,
+      fieldErrors: { amount: ['Сумма оплаты превышает остаток долга'] },
+    },
+  });
+  expect((await app.inject(`/students/${student.id}/balance?month=2026-10`)).json()).toEqual({
+    paid: 400000,
+    debt: 200000,
+  });
+  expect((await app.inject(`/students/${student.id}/balance?month=2026-11`)).json()).toEqual({
+    paid: 0,
+    debt: 600000,
+  });
+  expect((await app.inject(`/students/${student.id}/balance?month=wrong`)).statusCode).toBe(400);
+  expect((await app.inject('/students/999/balance')).statusCode).toBe(404);
 });

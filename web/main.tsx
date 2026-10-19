@@ -7,6 +7,12 @@ import '@fontsource/geist/500.css';
 import '@fontsource/geist/600.css';
 import './style.css';
 import { Auth } from './Auth';
+import { setLanguage } from './i18n';
+try {
+  setLanguage(localStorage.getItem('ledger-language') === 'uz' ? 'uz' : 'ru');
+} catch {
+  setLanguage('ru');
+}
 
 try {
   const theme = localStorage.getItem('ledger-theme');

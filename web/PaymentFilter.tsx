@@ -1,10 +1,12 @@
+import { useI18n } from './i18n';
 import { useRef, useState } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Check, SlidersHorizontal } from 'lucide-react';
 
-export type PaymentStatus = 'paid' | 'unpaid' | 'partial';
+export type PaymentStatus = 'all' | 'paid' | 'unpaid' | 'partial';
 const options = [
+  { value: 'all', label: 'Все', hint: 'Все ученики за месяц' },
   { value: 'unpaid', label: 'Не оплатившие', hint: 'Пока нет оплат' },
   { value: 'partial', label: 'В процессе', hint: 'Внесена часть суммы' },
   { value: 'paid', label: 'Оплатившие', hint: 'Сумма внесена полностью' },
@@ -17,6 +19,8 @@ export function PaymentFilter({
   value: PaymentStatus;
   onChange: (value: PaymentStatus) => void;
 }) {
+  const { t } = useI18n();
+
   const [open, setOpen] = useState(false);
   const content = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
@@ -25,10 +29,10 @@ export function PaymentFilter({
       <Popover.Trigger asChild>
         <button
           className="icon-button payment-filter"
-          aria-label={`Фильтр оплат: ${options.find((option) => option.value === value)!.label}`}
+          aria-label={`${t('Фильтр оплат')}: ${t(options.find((option) => option.value === value)!.label)}`}
         >
           <SlidersHorizontal size={19} />
-          {value !== 'unpaid' && <span className="filter-dot" />}
+          {value !== 'all' && <span className="filter-dot" />}
         </button>
       </Popover.Trigger>
       <AnimatePresence>
@@ -49,7 +53,7 @@ export function PaymentFilter({
                 ref={content}
                 className="filter-popover"
                 role="menu"
-                aria-label="Показать по статусу оплаты"
+                aria-label={t('Показать по статусу оплаты')}
                 initial={{ opacity: 0, y: reduced ? 0 : -6, scale: reduced ? 1 : 0.96 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: reduced ? 0 : -4, scale: reduced ? 1 : 0.97 }}
@@ -73,7 +77,7 @@ export function PaymentFilter({
                   buttons[next]?.focus();
                 }}
               >
-                <span className="filter-caption">Показать по</span>
+                <span className="filter-caption">{t('Показать по')}</span>
                 {options.map((option) => (
                   <button
                     key={option.value}
@@ -85,8 +89,8 @@ export function PaymentFilter({
                     }}
                   >
                     <span>
-                      <strong>{option.label}</strong>
-                      <small>{option.hint}</small>
+                      <strong>{t(option.label)}</strong>
+                      <small>{t(option.hint)}</small>
                     </span>
                     {value === option.value && <Check size={17} />}
                   </button>

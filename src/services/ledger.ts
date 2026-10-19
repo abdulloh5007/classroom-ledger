@@ -8,6 +8,9 @@ import {
   paymentSchema,
   studentSchema,
   studentPatchSchema,
+  courseSchema,
+  coursePatchSchema,
+  type Course,
   type Student,
   type Payment,
   type PaymentPage,
@@ -18,7 +21,7 @@ import { monthRange, currentMonth } from '../calendar.js';
 import { AppError } from '../errors.js';
 
 const studentColumns =
-  'id, name, phone, group_name AS "group", monthly_amount AS monthlyAmount, created_at AS createdAt';
+  'id, name, phone, group_name AS "group", monthly_amount AS monthlyAmount, course_id AS courseId, created_at AS createdAt';
 const paymentColumns =
   'id, student_id AS studentId, amount, paid_at AS date, created_at AS createdAt';
 export class LedgerService {
@@ -39,21 +42,120 @@ export class LedgerService {
     if (!result) throw new AppError(404, 'Ученик не найден');
     return result;
   }
+  courses(): Course[] {
+    return this.db
+      .prepare(
+        `SELECT c.id, c.name, c.monthly_amount AS monthlyAmount, c.created_at AS createdAt, COUNT(s.id) AS studentCount FROM courses c LEFT JOIN students s ON s.course_id=c.id GROUP BY c.id ORDER BY c.name COLLATE NOCASE, c.id`,
+      )
+      .all() as Course[];
+  }
+  course(rawId: unknown): Course {
+    const id = idSchema.parse(rawId);
+    const course = this.db
+      .prepare(
+        `SELECT c.id, c.name, c.monthly_amount AS monthlyAmount, c.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE course_id=c.id) AS studentCount FROM courses c WHERE c.id=?`,
+      )
+      .get(id) as Course | undefined;
+    if (!course) throw new AppError(404, 'Курс не найден');
+    return course;
+  }
+  createCourse(input: unknown): Course {
+    const data = courseSchema.parse(input);
+    return this.db
+      .transaction(() => {
+        if (
+          this.db
+            .prepare('SELECT id FROM courses WHERE name=? AND monthly_amount=?')
+            .get(data.name, data.monthlyAmount)
+        )
+          throw new AppError(409, 'Такой курс уже существует');
+        const result = this.db
+          .prepare('INSERT INTO courses(name, monthly_amount) VALUES (?, ?)')
+          .run(data.name, data.monthlyAmount);
+        return this.course(Number(result.lastInsertRowid));
+      })
+      .immediate();
+  }
+  updateCourse(rawId: unknown, input: unknown): Course {
+    const patch = coursePatchSchema.parse(input);
+    return this.db
+      .transaction(() => {
+        const existing = this.course(rawId);
+        const data = { ...existing, ...patch };
+        if (
+          this.db
+            .prepare('SELECT id FROM courses WHERE name=? AND monthly_amount=? AND id<>?')
+            .get(data.name, data.monthlyAmount, existing.id)
+        )
+          throw new AppError(409, 'Такой курс уже существует');
+        this.db
+          .prepare('UPDATE courses SET name=?, monthly_amount=? WHERE id=?')
+          .run(data.name, data.monthlyAmount, existing.id);
+        return this.course(existing.id);
+      })
+      .immediate();
+  }
+  deleteCourse(rawId: unknown): void {
+    this.db
+      .transaction(() => {
+        const course = this.course(rawId);
+        if (course.studentCount) throw new AppError(409, 'Нельзя удалить курс с учениками');
+        this.db.prepare('DELETE FROM courses WHERE id=?').run(course.id);
+      })
+      .immediate();
+  }
+  private legacyCourse(name: string, amount: number): Course {
+    const existing = this.db
+      .prepare('SELECT id FROM courses WHERE name=? AND monthly_amount=?')
+      .get(name, amount) as { id: number } | undefined;
+    return existing ? this.course(existing.id) : this.createCourse({ name, monthlyAmount: amount });
+  }
   createStudent(input: unknown): Student {
     const data = studentSchema.parse(input);
-    const result = this.db
-      .prepare('INSERT INTO students(name, phone, group_name, monthly_amount) VALUES (?, ?, ?, ?)')
-      .run(data.name, data.phone, data.group, data.monthlyAmount);
-    return this.student(Number(result.lastInsertRowid));
+    return this.db
+      .transaction(() => {
+        const course =
+          'courseId' in data
+            ? this.course(data.courseId)
+            : this.legacyCourse(data.group, data.monthlyAmount);
+        const result = this.db
+          .prepare(
+            'INSERT INTO students(name, phone, group_name, monthly_amount, course_id) VALUES (?, ?, ?, ?, ?)',
+          )
+          .run(data.name, data.phone, course.name, course.monthlyAmount, course.id);
+        return this.student(Number(result.lastInsertRowid));
+      })
+      .immediate();
   }
   updateStudent(id: unknown, input: unknown): Student {
     const patch = studentPatchSchema.parse(input);
-    const existing = this.student(id);
-    const data = { ...existing, ...patch };
-    this.db
-      .prepare('UPDATE students SET name=?, phone=?, group_name=?, monthly_amount=? WHERE id=?')
-      .run(data.name, data.phone, data.group, data.monthlyAmount, existing.id);
-    return this.student(existing.id);
+    return this.db
+      .transaction(() => {
+        const existing = this.student(id);
+        const course =
+          'courseId' in patch && patch.courseId !== undefined
+            ? this.course(patch.courseId)
+            : this.legacyCourse(
+                'group' in patch && patch.group !== undefined ? patch.group : existing.group,
+                'monthlyAmount' in patch && patch.monthlyAmount !== undefined
+                  ? patch.monthlyAmount
+                  : existing.monthlyAmount,
+              );
+        this.db
+          .prepare(
+            'UPDATE students SET name=?, phone=?, group_name=?, monthly_amount=?, course_id=? WHERE id=?',
+          )
+          .run(
+            patch.name ?? existing.name,
+            patch.phone ?? existing.phone,
+            course.name,
+            course.monthlyAmount,
+            course.id,
+            existing.id,
+          );
+        return this.student(existing.id);
+      })
+      .immediate();
   }
   deleteStudent(id: unknown): void {
     const student = this.student(id);
@@ -120,27 +222,34 @@ export class LedgerService {
   addPayment(id: unknown, input: unknown, requestKey?: string): Payment {
     const data = paymentSchema.parse(input);
     const student = this.student(id);
-    return this.db.transaction(() => {
-      if (requestKey) {
-        const receipt = this.db
-          .prepare(
-            `SELECT ${paymentColumns} FROM payments WHERE id=(SELECT payment_id FROM bot_receipts WHERE request_key=?)`,
-          )
-          .get(requestKey) as Payment | undefined;
-        if (receipt) return receipt;
-      }
-      const result = this.db
-        .prepare('INSERT INTO payments(student_id, amount, paid_at) VALUES (?, ?, ?)')
-        .run(student.id, data.amount, data.date);
-      const paymentId = Number(result.lastInsertRowid);
-      if (requestKey)
-        this.db
-          .prepare('INSERT INTO bot_receipts(request_key, payment_id) VALUES (?, ?)')
-          .run(requestKey, paymentId);
-      return this.db
-        .prepare(`SELECT ${paymentColumns} FROM payments WHERE id=?`)
-        .get(paymentId) as Payment;
-    })();
+    return this.db
+      .transaction(() => {
+        if (requestKey) {
+          const receipt = this.db
+            .prepare(
+              `SELECT ${paymentColumns} FROM payments WHERE id=(SELECT payment_id FROM bot_receipts WHERE request_key=?)`,
+            )
+            .get(requestKey) as Payment | undefined;
+          if (receipt) return receipt;
+        }
+        const remaining = this.balance(student.id, data.date.slice(0, 7)).debt;
+        if (data.amount > remaining) {
+          const message = 'Сумма оплаты превышает остаток долга';
+          throw new AppError(400, message, { fieldErrors: { amount: [message] }, remaining });
+        }
+        const result = this.db
+          .prepare('INSERT INTO payments(student_id, amount, paid_at) VALUES (?, ?, ?)')
+          .run(student.id, data.amount, data.date);
+        const paymentId = Number(result.lastInsertRowid);
+        if (requestKey)
+          this.db
+            .prepare('INSERT INTO bot_receipts(request_key, payment_id) VALUES (?, ?)')
+            .run(requestKey, paymentId);
+        return this.db
+          .prepare(`SELECT ${paymentColumns} FROM payments WHERE id=?`)
+          .get(paymentId) as Payment;
+      })
+      .immediate();
   }
   balance(id: unknown, month = currentMonth()): { paid: number; debt: number } {
     const student = this.student(id);

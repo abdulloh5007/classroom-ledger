@@ -41,11 +41,16 @@ describe('Расчёт задолженности', () => {
     service.addPayment(student.id, { amount: 900000, date: '2026-11-01' });
     expect(service.debtors('2026-10')[0]).toMatchObject({ paid: 500000, debt: 500000 });
   });
-  it('исключает полностью оплативших и переплату', () => {
+  it('исключает полную оплату и ранее сохранённую переплату', () => {
     const a = service.createStudent(input);
     const b = service.createStudent({ ...input, name: 'Бобур' });
     service.addPayment(a.id, { amount: 1000000, date: '2026-10-10' });
-    service.addPayment(b.id, { amount: 1200000, date: '2026-10-11' });
+    // Historical overpayments remain readable; new ones are rejected.
+    db.prepare('INSERT INTO payments(student_id, amount, paid_at) VALUES (?, ?, ?)').run(
+      b.id,
+      1200000,
+      '2026-10-11',
+    );
     expect(service.debtors('2026-10')).toEqual([]);
     expect(service.balance(b.id, '2026-10').debt).toBe(0);
     expect(service.debtors('2026-11')).toHaveLength(2);
@@ -118,4 +123,24 @@ describe('Права администратора', () => {
     expect(() => service.removeAdmin(123, 123)).toThrow('Владельца нельзя удалить');
     expect(service.canAccess(123)).toBe(true);
   });
+});
+
+it('принимает только остаток долга, проверяет месяц и сохраняет повторную квитанцию', () => {
+  const student = service.createStudent(input);
+  service.addPayment(student.id, { amount: 400000, date: '2026-10-01' });
+  expect(() => service.addPayment(student.id, { amount: 600001, date: '2026-10-20' })).toThrow(
+    'Сумма оплаты превышает остаток долга',
+  );
+  expect(service.balance(student.id, '2026-10')).toEqual({ paid: 400000, debt: 600000 });
+  const receipt = service.addPayment(
+    student.id,
+    { amount: 600000, date: '2026-10-20' },
+    'full-balance',
+  );
+  expect(
+    service.addPayment(student.id, { amount: 600000, date: '2026-10-20' }, 'full-balance').id,
+  ).toBe(receipt.id);
+  expect(() => service.addPayment(student.id, { amount: 1, date: '2026-10-31' })).toThrow();
+  service.addPayment(student.id, { amount: 1000000, date: '2026-11-01' });
+  expect(service.payments(student.id)).toHaveLength(3);
 });

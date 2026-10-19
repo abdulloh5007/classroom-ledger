@@ -1,3 +1,4 @@
+import { useI18n } from './i18n';
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowUp, Moon, Sun } from 'lucide-react';
@@ -11,6 +12,8 @@ export function FloatingControls({
   onTheme: (button: HTMLButtonElement) => void;
   hidden: boolean;
 }) {
+  const { t } = useI18n();
+
   const [visible, setVisible] = useState(true);
   const [deep, setDeep] = useState(false);
   const reduced = useReducedMotion();
@@ -53,7 +56,7 @@ export function FloatingControls({
           exit={{ y: reduced ? 0 : 128, opacity: reduced ? 0 : 1 }}
           whileTap={{ scale: reduced ? 1 : 0.94 }}
           transition={transition}
-          aria-label={dark ? 'Включить светлую тему' : 'Включить тёмную тему'}
+          aria-label={dark ? t('Включить светлую тему') : t('Включить тёмную тему')}
           onClick={(event) => onTheme(event.currentTarget)}
         >
           {dark ? <Sun size={20} /> : <Moon size={20} />}
@@ -68,7 +71,7 @@ export function FloatingControls({
           exit={{ y: reduced ? 0 : 128, opacity: reduced ? 0 : 1 }}
           whileTap={{ scale: reduced ? 1 : 0.94 }}
           transition={transition}
-          aria-label="Вернуться наверх"
+          aria-label={t('Вернуться наверх')}
           onClick={() => window.scrollTo({ top: 0, behavior: reduced ? 'instant' : 'smooth' })}
         >
           <ArrowUp size={20} />

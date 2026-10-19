@@ -1,12 +1,19 @@
+import { useI18n } from './i18n';
 import { useEffect, useState, type FormEvent, type Dispatch, type SetStateAction } from 'react';
 import { ArrowDownLeft, Check, Trash2 } from 'lucide-react';
-import { paymentSchema, studentSchema, type Student } from '../src/contracts';
-import { today, formatMoney } from '../src/calendar';
+import {
+  paymentSchema,
+  studentEnrollmentSchema,
+  type Student,
+  type Course,
+} from '../src/contracts';
+import { today } from '../src/calendar';
 import { api, ApiError } from './api';
 import { AmountField, Spinner, StudentSelect } from './components';
 import { invalidateHistory, prefetchHistory, useHistory } from './history';
 import { PhoneField } from './PhoneField';
 import { formatUzPhone, uzPhoneDigits } from '../src/phone';
+import { MonthPicker } from './MonthPicker';
 
 function clearField(setErrors: Dispatch<SetStateAction<Record<string, string[]>>>, key: string) {
   setErrors((previous) => {
@@ -30,20 +37,65 @@ export function PaymentForm({
   initialId?: number;
   onSaved: (text: string) => void;
 }) {
+  const { t, formatMoney } = useI18n();
+
   const [studentId, setStudentId] = useState(initialId ? String(initialId) : '');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(today());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
+  const [balance, setBalance] = useState<{ key: string; paid: number; debt: number }>();
+  const [balanceError, setBalanceError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const month = date.slice(0, 7);
+  const balanceKey = `${studentId}/${month}`;
+  const currentBalance = balance?.key === balanceKey ? balance : undefined;
+  useEffect(() => {
+    if (!studentId) return;
+    const controller = new AbortController();
+    setBalanceError('');
+    setBalance(undefined);
+    void api<{ paid: number; debt: number }>(`/students/${studentId}/balance?month=${month}`, {
+      signal: controller.signal,
+    })
+      .then((value) => {
+        if (!controller.signal.aborted) setBalance({ ...value, key: `${studentId}/${month}` });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          setBalanceError(
+            error instanceof Error ? error.message : t('Не удалось загрузить остаток'),
+          );
+      });
+    return () => controller.abort();
+  }, [studentId, month, attempt, t]);
+  const projectedPaid = (currentBalance?.paid ?? 0) + Number(amount);
+  const projectedDebt = Math.max(0, (currentBalance?.debt ?? 0) - Number(amount));
+  const percentage = currentBalance
+    ? Math.min(
+        100,
+        Math.round((projectedPaid / Math.max(1, currentBalance.paid + currentBalance.debt)) * 100),
+      )
+    : 0;
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
+    if (!currentBalance || Number(amount) > currentBalance.debt) {
+      setErrors({
+        amount: [
+          currentBalance
+            ? t('Сумма оплаты превышает остаток долга')
+            : t('Дождитесь загрузки остатка'),
+        ],
+      });
+      return;
+    }
     const parsed = paymentSchema.safeParse({ amount: Number(amount), date });
     if (!parsed.success || !studentId) {
       setErrors({
         ...(!parsed.success ? parsed.error.flatten().fieldErrors : {}),
-        ...(!studentId ? { studentId: ['Выберите ученика'] } : {}),
+        ...(!studentId ? { studentId: [t('Выберите ученика')] } : {}),
       });
       return;
     }
@@ -56,11 +108,12 @@ export function PaymentForm({
         body: JSON.stringify(parsed.data),
       });
       invalidateHistory(Number(studentId));
-      onSaved('Оплата успешно внесена');
+      onSaved(t('Оплата успешно внесена'));
     } catch (error) {
       const data = fields(error);
       setError(data.message);
       setErrors(data.fields);
+      setAttempt((value) => value + 1);
     } finally {
       setBusy(false);
     }
@@ -73,6 +126,7 @@ export function PaymentForm({
             value={studentId}
             onChange={(value) => {
               setStudentId(value);
+              setAmount('');
               clearField(setErrors, 'studentId');
             }}
             disabled={busy}
@@ -85,47 +139,106 @@ export function PaymentForm({
         </div>
         <AmountField
           id="payment-amount"
-          label="Сумма оплаты"
+          label={t('Сумма оплаты')}
           value={amount}
+          max={currentBalance?.debt}
+          disabled={!currentBalance}
+          onMax={() => {
+            if (currentBalance) {
+              setAmount(String(currentBalance.debt));
+              clearField(setErrors, 'amount');
+            }
+          }}
           onChange={(value) => {
+            if (currentBalance && Number(value) > currentBalance.debt) {
+              setErrors((previous) => ({
+                ...previous,
+                amount: [t('Сумма оплаты превышает остаток долга')],
+              }));
+              return;
+            }
             setAmount(value);
             clearField(setErrors, 'amount');
-            clearField(setErrors, 'monthlyAmount');
           }}
           error={errors.amount?.[0]}
         />
-        <label className="field" htmlFor="payment-date">
-          <span id="payment-date-label">Дата оплаты</span>
-          <input
+        <div className="field">
+          <label htmlFor="payment-date">{t('Дата оплаты')}</label>
+          <MonthPicker
             id="payment-date"
-            aria-labelledby="payment-date-label"
-            type="date"
-            value={date}
-            min="1900-01-01"
-            max="9999-11-30"
-            onChange={(event) => {
-              setDate(event.target.value);
+            className="payment-month"
+            month={month}
+            direction={1}
+            date={date}
+            onChange={() => undefined}
+            onDateChange={(next) => {
+              if (next.slice(0, 7) !== month) setAmount('');
+              setDate(next);
               clearField(setErrors, 'date');
             }}
-            required
-            aria-invalid={Boolean(errors.date)}
-            aria-describedby={errors.date ? 'date-error' : undefined}
           />
-          {errors.date && (
-            <span className="field-error" id="date-error">
-              {errors.date[0]}
-            </span>
-          )}
-        </label>
-        <p className="form-hint">Оплата попадёт в месяц указанной даты.</p>
+          {errors.date && <span className="field-error">{t(errors.date[0]!)}</span>}
+        </div>
+        {currentBalance ? (
+          <div className="payment-balance" aria-live="polite">
+            <div className="payment-figures">
+              <div>
+                <span>{t(Number(amount) > 0 ? 'После оплаты' : 'Оплачено')}</span>
+                <strong>{formatMoney(projectedPaid)}</strong>
+              </div>
+              <div>
+                <span>{t(Number(amount) > 0 ? 'Останется' : 'Осталось')}</span>
+                <strong>{formatMoney(projectedDebt)}</strong>
+              </div>
+            </div>
+            <div
+              className="progress"
+              role="progressbar"
+              aria-label={t('Оплата за месяц')}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={percentage}
+            >
+              <span style={{ width: `${percentage}%` }} />
+            </div>
+          </div>
+        ) : studentId && !balanceError ? (
+          <div className="payment-balance-loading" role="status">
+            <Spinner />
+            {t('Загружаем остаток…')}
+          </div>
+        ) : null}
+        {balanceError && (
+          <div className="error-message" role="alert">
+            {t(balanceError)}
+            <button
+              type="button"
+              className="button secondary full"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              {t('Повторить')}
+            </button>
+          </div>
+        )}
         {error && (
           <p className="error-message" role="alert">
-            {error}
+            {t(error)}
           </p>
         )}
-        <button type="submit" className="button primary full" disabled={busy || !students.length}>
+        <button
+          type="submit"
+          className="button primary full"
+          disabled={
+            busy ||
+            !students.length ||
+            !currentBalance ||
+            currentBalance.debt === 0 ||
+            !amount ||
+            Number(amount) > currentBalance.debt
+          }
+        >
           {busy ? <Spinner /> : <Check size={18} />}
-          {busy ? 'Сохраняем…' : 'Сохранить оплату'}
+          {busy ? t('Сохраняем…') : t('Сохранить оплату')}
         </button>
       </fieldset>
     </form>
@@ -133,26 +246,31 @@ export function PaymentForm({
 }
 export function StudentForm({
   student,
+  courses,
+  onCreateCourse,
   onSaved,
 }: {
+  courses: Course[];
+  onCreateCourse: () => void;
   student?: Student;
   onSaved: (text: string) => void;
 }) {
+  const { t, formatMoney } = useI18n();
+
   const [name, setName] = useState(student?.name ?? '');
   const [phone, setPhone] = useState(formatUzPhone(student?.phone ?? ''));
-  const [group, setGroup] = useState(student?.group ?? '');
-  const [amount, setAmount] = useState(student ? String(student.monthlyAmount) : '');
+  const [courseId, setCourseId] = useState(student ? String(student.courseId) : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const result = studentSchema.safeParse({ name, phone, group, monthlyAmount: Number(amount) });
+    const result = studentEnrollmentSchema.safeParse({ name, phone, courseId: Number(courseId) });
     if (uzPhoneDigits(phone).length !== 9) {
       setErrors({
         ...(!result.success ? result.error.flatten().fieldErrors : {}),
-        phone: ['Введите номер полностью: +998 (90) 123-56-78'],
+        phone: [t('Введите номер полностью: +998 (90) 123-56-78')],
       });
       return;
     }
@@ -168,7 +286,7 @@ export function StudentForm({
         method: student ? 'PATCH' : 'POST',
         body: JSON.stringify(result.data),
       });
-      onSaved(student ? 'Данные ученика обновлены' : 'Ученик добавлен');
+      onSaved(student ? t('Данные ученика обновлены') : t('Ученик добавлен'));
     } catch (error) {
       const data = fields(error);
       setError(data.message);
@@ -184,33 +302,24 @@ export function StudentForm({
           [
             {
               key: 'name',
-              label: 'Имя и фамилия',
+              label: t('Имя и фамилия'),
               value: name,
               set: setName,
               type: 'text',
-              placeholder: 'Например, Азиза Каримова',
+              placeholder: t('Например, Азиза Каримова'),
               autoComplete: 'name',
-            },
-            {
-              key: 'group',
-              label: 'Группа',
-              value: group,
-              set: setGroup,
-              type: 'text',
-              placeholder: 'Например, English · A2',
-              autoComplete: 'off',
             },
           ] as const
         ).map((field) => (
           <label className="field" key={field.key} htmlFor={`student-${field.key}`}>
-            <span id={`student-${field.key}-label`}>{field.label}</span>
+            <span id={`student-${field.key}-label`}>{t(field.label)}</span>
             <input
               id={`student-${field.key}`}
               aria-labelledby={`student-${field.key}-label`}
               value={field.value}
               type={field.type}
               autoComplete={field.autoComplete}
-              maxLength={field.key === 'name' ? 100 : 80}
+              maxLength={100}
               onChange={(event) => {
                 field.set(event.target.value);
                 clearField(setErrors, field.key);
@@ -222,7 +331,7 @@ export function StudentForm({
             />
             {errors[field.key] && (
               <span id={`${field.key}-error`} className="field-error">
-                {errors[field.key]?.[0]}
+                {t(errors[field.key]?.[0] ?? '')}
               </span>
             )}
           </label>
@@ -235,36 +344,50 @@ export function StudentForm({
           }}
           error={errors.phone?.[0]}
         />
-        <AmountField
-          id="monthly-amount"
-          label="Оплата в месяц"
-          value={amount}
-          onChange={(value) => {
-            setAmount(value);
-            clearField(setErrors, 'amount');
-            clearField(setErrors, 'monthlyAmount');
-          }}
-          error={errors.monthlyAmount?.[0]}
-        />
-        {student && (
-          <p className="form-hint">
-            Новая месячная сумма применяется и при просмотре прошлых месяцев.
-          </p>
+        <div className="field">
+          <StudentSelect
+            id="course-select"
+            label={t('Курс')}
+            placeholder={t('Выберите курс')}
+            value={courseId}
+            onChange={(value) => {
+              setCourseId(value);
+              clearField(setErrors, 'courseId');
+            }}
+            options={courses.map((course) => ({
+              value: String(course.id),
+              label: `${course.name} · ${formatMoney(course.monthlyAmount)}`,
+            }))}
+            error={errors.courseId?.[0]}
+          />
+        </div>
+        {!courses.length && (
+          <div className="course-empty-hint">
+            <p className="form-hint">
+              {t('Сначала создайте курс, затем добавьте в него ученика.')}
+            </p>
+            <button className="button secondary full" type="button" onClick={onCreateCourse}>
+              {t('Добавить курс')}
+            </button>
+          </div>
         )}
+        {courseId && <p className="form-hint">{t('Стоимость задаётся в курсе')}</p>}
         {error && (
           <p className="error-message" role="alert">
-            {error}
+            {t(error)}
           </p>
         )}
-        <button className="button primary full" type="submit" disabled={busy}>
+        <button className="button primary full" type="submit" disabled={busy || !courses.length}>
           {busy ? <Spinner /> : <Check size={18} />}
-          {busy ? 'Сохраняем…' : student ? 'Сохранить изменения' : 'Добавить ученика'}
+          {busy ? t('Сохраняем…') : student ? t('Сохранить изменения') : t('Добавить ученика')}
         </button>
       </fieldset>
     </form>
   );
 }
 export function History({ student }: { student: Student }) {
+  const { t, formatMoney } = useI18n();
+
   const history = useHistory(student.id);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -272,31 +395,32 @@ export function History({ student }: { student: Student }) {
     let active = true;
     setError('');
     void prefetchHistory(student.id).catch((error: unknown) => {
-      if (active) setError(error instanceof Error ? error.message : 'Не удалось загрузить оплаты');
+      if (active)
+        setError(error instanceof Error ? error.message : t('Не удалось загрузить оплаты'));
     });
     return () => {
       active = false;
     };
-  }, [student.id, attempt]);
+  }, [student.id, attempt, t]);
   if (error && !history)
     return (
       <div className="error-message" role="alert">
-        {error}
+        {t(error)}
         <button className="button secondary full" onClick={() => setAttempt((value) => value + 1)}>
-          Повторить
+          {t('Повторить')}{' '}
         </button>
       </div>
     );
   if (!history)
     return (
       <div className="loading-inline" role="status">
-        <Spinner /> Загружаем историю…
+        <Spinner /> {t('Загружаем историю…')}{' '}
       </div>
     );
   return (
     <>
       <div className="history-total">
-        <span>Всего внесено за всё время</span>
+        <span>{t('Всего внесено за всё время')}</span>
         <strong>{formatMoney(history.totalAmount)}</strong>
       </div>
       <div className="inset-list">
@@ -307,18 +431,21 @@ export function History({ student }: { student: Student }) {
             </span>
             <div>
               <strong>{formatMoney(payment.amount)}</strong>
-              <small>Оплата #{payment.id}</small>
+              <small>
+                {t('Оплата #')}
+                {payment.id}
+              </small>
             </div>
             <time dateTime={payment.date}>{payment.date.split('-').reverse().join('.')}</time>
           </div>
         ))}
       </div>
       <p className="form-hint">
-        Показано {history.items.length} из {history.total} оплат
+        {t('Показано')} {history.items.length} {t('из')} {history.total} {t('оплат')}{' '}
       </p>
       {(history.error || error) && (
         <p className="error-message" role="alert">
-          {history.error || error}
+          {t(history.error || error)}
         </p>
       )}
       {history.nextCursor && (
@@ -328,16 +455,18 @@ export function History({ student }: { student: Student }) {
           onClick={() => {
             setError('');
             void prefetchHistory(student.id, true).catch((error: unknown) =>
-              setError(error instanceof Error ? error.message : 'Не удалось загрузить оплаты'),
+              setError(error instanceof Error ? error.message : t('Не удалось загрузить оплаты')),
             );
           }}
         >
           {history.loadingMore && <Spinner />}
-          {history.loadingMore ? 'Загружаем…' : 'Показать ещё 10'}
+          {history.loadingMore ? t('Загружаем…') : t('Показать ещё 10')}
         </button>
       )}
       {!history.items.length && (
-        <p className="form-hint">Платежей пока нет. Внесите первую оплату в карточке ученика.</p>
+        <p className="form-hint">
+          {t('Платежей пока нет. Внесите первую оплату в карточке ученика.')}
+        </p>
       )}
     </>
   );
@@ -351,6 +480,8 @@ export function DeleteStudent({
   onSaved: (text: string) => void;
   onCancel: () => void;
 }) {
+  const { t } = useI18n();
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function remove() {
@@ -360,7 +491,7 @@ export function DeleteStudent({
     try {
       await api(`/students/${student.id}`, { method: 'DELETE' });
       invalidateHistory(student.id);
-      onSaved('Ученик удалён');
+      onSaved(t('Ученик удалён'));
     } catch (error) {
       setError(fields(error).message);
     } finally {
@@ -370,20 +501,20 @@ export function DeleteStudent({
   return (
     <div className="form">
       <p>
-        Ученик <b>{student.name}</b> и вся его история оплат будут удалены. Восстановить данные не
-        получится.
+        {t('Ученик')} <b>{student.name}</b>{' '}
+        {t('и вся его история оплат будут удалены. Восстановить данные не получится.')}{' '}
       </p>
       {error && (
         <p role="alert" className="error-message">
-          {error}
+          {t(error)}
         </p>
       )}
       <button className="button destructive full" onClick={() => void remove()} disabled={busy}>
         {busy ? <Spinner /> : <Trash2 size={18} />}
-        {busy ? 'Удаляем…' : 'Удалить ученика'}
+        {busy ? t('Удаляем…') : t('Удалить ученика')}
       </button>
       <button className="button secondary full" onClick={onCancel} disabled={busy}>
-        Отмена
+        {t('Отмена')}{' '}
       </button>
     </div>
   );

@@ -1,20 +1,20 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Geist', 'Segoe UI', sans-serif;
   color-scheme: light;
-  --bg: #fafafa;
-  --tab-track: #ececec;
+  --bg: #f2f3f5;
+  --tab-track: #e2e6eb;
   --tab-selected: #fff;
   --surface: #fff;
-  --subtle: #fafafa;
-  --hover: #ededed;
+  --subtle: #f3f5f7;
+  --hover: #e9edf1;
   --ink: #171717;
   --muted: #666666;
   --faint: #707070;
-  --line: #eaeaea;
+  --line: #e2e6eb;
   --strong-line: #d4d4d4;
   --primary: #171717;
   --primary-ink: #fff;
-  --accent: #171717;
+  --accent: #1689c7;
   --danger: #d63630;
   --danger-bg: #fff1f0;
   --green: #21873c;
@@ -29,11 +29,11 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --bg: #0a0a0a;
-    --tab-track: #181818;
-    --tab-selected: #333333;
-    --surface: #141414;
-    --subtle: #222222;
+    --bg: #0e1116;
+    --tab-track: #1b2028;
+    --tab-selected: #394352;
+    --surface: #1b2028;
+    --subtle: #282f3a;
     --hover: #2a2a2a;
     --ink: #ededed;
     --muted: #a1a1a1;
@@ -42,7 +42,7 @@
     --strong-line: #404040;
     --primary: #ededed;
     --primary-ink: #0a0a0a;
-    --accent: #ededed;
+    --accent: #4eb8ef;
     --ring: #ededed;
     --danger: #ff6961;
     --danger-bg: #331d1e;
@@ -52,11 +52,11 @@
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #0a0a0a;
-  --tab-track: #181818;
-  --tab-selected: #333333;
-  --surface: #141414;
-  --subtle: #222222;
+  --bg: #0e1116;
+  --tab-track: #1b2028;
+  --tab-selected: #394352;
+  --surface: #1b2028;
+  --subtle: #282f3a;
   --hover: #2a2a2a;
   --ink: #ededed;
   --muted: #a1a1a1;
@@ -65,7 +65,7 @@
   --strong-line: #404040;
   --primary: #ededed;
   --primary-ink: #0a0a0a;
-  --accent: #ededed;
+  --accent: #4eb8ef;
   --ring: #ededed;
   --danger: #ff6961;
   --danger-bg: #331d1e;
@@ -483,7 +483,7 @@ main {
   margin-top: 12px;
   height: 4px;
   border-radius: 99px;
-  background: var(--subtle);
+  background: color-mix(in srgb, var(--muted) 20%, var(--surface));
   overflow: hidden;
 }
 .progress > span {
@@ -686,7 +686,7 @@ main {
 .sheet-header .icon-button {
   margin-right: -7px;
   margin-top: -4px;
-  background: var(--subtle);
+  background: transparent;
 }
 .sheet-body {
   padding: 3px 24px 25px;
@@ -723,6 +723,7 @@ fieldset {
   font-size: 12px;
 }
 .field > span:first-child,
+.field > label,
 .field-label {
   color: var(--muted);
   font-weight: 400;
@@ -1327,22 +1328,16 @@ html {
   padding-top: 0;
 }
 .wallet-hero {
-  --hero: #dceefb;
-  --muted: color-mix(in srgb, var(--ink) 72%, var(--hero));
+  --hero: #2aabee;
+  --ink: #06283c;
+  --muted: #12384f;
   background: var(--hero);
+  color: var(--ink);
   padding: calc(18px + env(safe-area-inset-top)) 16px 14px;
   border-radius: 0 0 36px 36px;
   text-align: center;
   position: relative;
   isolation: isolate;
-}
-:root[data-theme='dark'] .wallet-hero {
-  --hero: #172d40;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .wallet-hero {
-    --hero: #172d40;
-  }
 }
 .wallet-logout {
   position: absolute;
@@ -1378,7 +1373,6 @@ html {
   position: relative;
   height: 124px;
   overflow: hidden;
-  perspective: 900px;
   mask-image: linear-gradient(to right, transparent, black 20%, black 80%, transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, black 20%, black 80%, transparent);
   user-select: none;
@@ -1395,8 +1389,6 @@ html {
   justify-content: center;
   gap: 14px;
   pointer-events: none;
-  transform-style: preserve-3d;
-  will-change: transform, opacity;
 }
 .wallet-amount {
   display: flex;
@@ -1410,10 +1402,6 @@ html {
   line-height: 1.15;
   letter-spacing: -1.9px;
   white-space: nowrap;
-}
-.wallet-amount.compact {
-  font-size: clamp(20px, 6vw, 34px);
-  letter-spacing: -1px;
 }
 .wallet-amount small {
   font-size: 12px;
@@ -1622,18 +1610,6 @@ html {
   .wallet-amount {
     font-size: 54px;
   }
-  .wallet-amount.compact {
-    font-size: 36px;
-  }
-  .wallet-arrow {
-    top: -14px;
-  }
-  .wallet-arrow.previous {
-    left: 22px;
-  }
-  .wallet-arrow.next {
-    right: 22px;
-  }
   .wallet-tabs {
     max-width: 440px;
     margin: 22px auto 0;
@@ -1727,4 +1703,124 @@ html.theme-revealing::view-transition-old(root) {
 .filter-popover small {
   font-size: 12px;
   color: var(--muted);
+}
+
+.amount-max {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 52px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.amount-max:active {
+  transform: translateY(-50%) scale(0.97);
+}
+.amount-max:hover {
+  background: var(--hover);
+}
+.with-max input {
+  padding-right: 66px;
+}
+.payment-balance {
+  margin: 0 0 4px;
+  padding: 14px 0;
+}
+.payment-balance .payment-figures {
+  margin-top: 0;
+}
+.payment-month {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 50px;
+  padding: 12px 15px;
+  font-size: 16px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--subtle);
+  color: var(--ink);
+}
+.payment-month .month-label {
+  min-width: 0;
+  font-size: 16px;
+}
+.month-wheels.with-day {
+  grid-template-columns: 0.65fr 1.4fr 0.95fr;
+}
+.payment-balance-loading {
+  min-height: 69px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.wallet-language {
+  position: absolute;
+  top: calc(18px + env(safe-area-inset-top));
+  right: 14px;
+  z-index: 2;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  background: transparent;
+}
+.login-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.course-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.course-row:last-child {
+  border-bottom: 0;
+}
+.course-row .student-info small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+  font-size: 12px;
+}
+.courses-toolbar {
+  margin-bottom: 16px;
+  gap: 12px;
+}
+.course-empty-hint {
+  display: grid;
+  gap: 12px;
+}
+.student-actions [aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+@media (max-width: 400px) {
+  .wallet-tabs .segment-text {
+    font-size: 11px;
+    gap: 4px;
+  }
+  .wallet-tabs .segment-text svg {
+    width: 14px;
+  }
+}
+
+.payment-balance .progress > span {
+  transition: width 220ms var(--curve);
 }

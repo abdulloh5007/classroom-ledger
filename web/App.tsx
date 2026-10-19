@@ -1,3 +1,4 @@
+import { useI18n } from './i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
@@ -6,6 +7,7 @@ import {
   Check,
   CircleCheck,
   CalendarDays,
+  BookOpen,
   CreditCard,
   GraduationCap,
   History as HistoryIcon,
@@ -16,8 +18,8 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import type { Student } from '../src/contracts';
-import { currentMonth, formatMoney } from '../src/calendar';
+import type { Course, Student } from '../src/contracts';
+import { currentMonth } from '../src/calendar';
 import { Empty, Sheet, Tip, Spinner } from './components';
 import { DeleteStudent, History, PaymentForm, StudentForm } from './forms';
 import { prefetchHistory } from './history';
@@ -26,11 +28,14 @@ import { WalletHero } from './WalletHero';
 import { FloatingControls } from './FloatingControls';
 import { PaymentFilter, type PaymentStatus } from './PaymentFilter';
 import { revealTheme } from './theme';
+import { Courses, CourseForm, DeleteCourse } from './Courses';
 
 type Modal =
   | { type: 'payment'; studentId?: number }
   | { type: 'student'; student?: Student }
-  | { type: 'history' | 'delete'; student: Student };
+  | { type: 'history' | 'delete'; student: Student }
+  | { type: 'course'; course?: Course }
+  | { type: 'deleteCourse'; course: Course };
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -59,11 +64,14 @@ export function App({
   onLogout?: () => Promise<void>;
   loggingOut?: boolean;
 }) {
+  const { t, formatMoney } = useI18n();
+
   const [month, setMonth] = useState(currentMonth());
   const [direction, setDirection] = useState(1);
-  const [tab, setTab] = useState<'debtors' | 'students'>('debtors');
+  const [tab, setTab] = useState<'debtors' | 'students' | 'courses'>('debtors');
   const {
     students,
+    courses,
     months,
     loading: monthLoading,
     ready,
@@ -74,13 +82,15 @@ export function App({
   const loading = !ready || (tab === 'debtors' && monthLoading);
   const error = studentsError || (tab === 'debtors' ? monthError : '');
   const future = month > currentMonth();
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('unpaid');
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('all');
   const debtors = (future ? [] : (months[month] ?? [])).filter((row) =>
-    paymentStatus === 'unpaid'
-      ? row.paid === 0
-      : paymentStatus === 'partial'
-        ? row.paid > 0 && row.debt > 0
-        : row.debt === 0,
+    paymentStatus === 'all'
+      ? true
+      : paymentStatus === 'unpaid'
+        ? row.paid === 0
+        : paymentStatus === 'partial'
+          ? row.paid > 0 && row.debt > 0
+          : row.debt === 0,
   );
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState<Modal | null>(null);
@@ -164,38 +174,47 @@ export function App({
     setToast({ id: Date.now(), text });
     void reload();
   }
-  function selectMonth(next: string) {
-    setDirection(next < month ? -1 : 1);
-    setMonth(next);
-  }
+  const selectMonth = useCallback(
+    (next: string) => {
+      setDirection(next < month ? -1 : 1);
+      setMonth(next);
+    },
+    [month],
+  );
   const filtered = students.filter((student) => matchesStudent(student, query));
   const modalTitle = !modal
     ? ''
-    : modal.type === 'payment'
-      ? 'Внести оплату'
-      : modal.type === 'student'
-        ? modal.student
-          ? 'Редактировать ученика'
-          : 'Новый ученик'
-        : modal.type === 'delete'
-          ? 'Удалить ученика?'
-          : 'История оплат';
+    : modal.type === 'course'
+      ? t(modal.course ? 'Редактировать курс' : 'Новый курс')
+      : modal.type === 'deleteCourse'
+        ? t('Удалить курс?')
+        : modal.type === 'payment'
+          ? t('Внести оплату')
+          : modal.type === 'student'
+            ? modal.student
+              ? t('Редактировать ученика')
+              : t('Новый ученик')
+            : modal.type === 'delete'
+              ? t('Удалить ученика?')
+              : t('История оплат');
   const modalDescription = !modal
     ? ''
-    : modal.type === 'payment'
-      ? 'Все суммы в узбекских сумах'
-      : modal.type === 'student'
-        ? 'Данные и месячная стоимость обучения'
-        : modal.type === 'history'
-          ? modal.student.name
-          : 'Это действие нельзя отменить';
+    : modal.type === 'course' || modal.type === 'deleteCourse'
+      ? ''
+      : modal.type === 'payment'
+        ? ''
+        : modal.type === 'student'
+          ? t('Данные и месячная стоимость обучения')
+          : modal.type === 'history'
+            ? modal.student.name
+            : t('Это действие нельзя отменить');
   return (
     <div className="app-shell wallet-shell">
       <a className="skip-link" href="#content">
-        Перейти к содержимому
+        {t('Перейти к содержимому')}{' '}
       </a>
       <main id="content">
-        <h1 className="sr-only">Учёт оплат</h1>
+        <h1 className="sr-only">{t('Учёт оплат')}</h1>
         <WalletHero
           month={month}
           direction={direction}
@@ -207,11 +226,12 @@ export function App({
           loggingOut={loggingOut}
         />
         <div className="wallet-tabs">
-          <div className="segment-control" role="tablist" aria-label="Раздел учёта">
+          <div className="segment-control" role="tablist" aria-label={t('Раздел учёта')}>
             {(
               [
-                { id: 'debtors', label: 'Должники', Icon: CreditCard },
-                { id: 'students', label: 'Ученики', Icon: Users },
+                { id: 'debtors', label: t('Должники'), Icon: CreditCard },
+                { id: 'students', label: t('Ученики'), Icon: Users },
+                { id: 'courses', label: t('Курсы'), Icon: BookOpen },
               ] as const
             ).map(({ id, label, Icon }) => (
               <button
@@ -224,14 +244,18 @@ export function App({
                 onKeyDown={(event) => {
                   if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
                     event.preventDefault();
+                    const order = ['debtors', 'students', 'courses'] as const;
                     const target =
                       event.key === 'Home'
-                        ? 'debtors'
+                        ? order[0]
                         : event.key === 'End'
-                          ? 'students'
-                          : tab === 'debtors'
-                            ? 'students'
-                            : 'debtors';
+                          ? order[2]
+                          : order[
+                              (order.indexOf(tab) +
+                                (event.key === 'ArrowRight' ? 1 : -1) +
+                                order.length) %
+                                order.length
+                            ]!;
                     setTab(target);
                     document.getElementById(`tab-${target}`)?.focus();
                   }
@@ -252,7 +276,7 @@ export function App({
                 )}
                 <span className="segment-text">
                   <Icon size={16} />
-                  {label}
+                  {t(label)}
                 </span>
               </button>
             ))}
@@ -261,16 +285,16 @@ export function App({
         <div className="wallet-content">
           {error ? (
             <div className="network-error" role="alert">
-              <p>{error}</p>
+              <p>{t(error)}</p>
               <button className="button secondary" onClick={() => void reload()}>
-                Попробовать снова
+                {t('Попробовать снова')}{' '}
               </button>
             </div>
           ) : loading ? (
-            <div className="skeletons" role="status" aria-label="Загрузка данных">
+            <div className="skeletons" role="status" aria-label={t('Загрузка данных')}>
               <div className="skeleton card-skeleton" />
               <div className="skeleton card-skeleton" />
-              <span className="sr-only">Загружаем учеников и оплаты</span>
+              <span className="sr-only">{t('Загружаем учеников и оплаты')}</span>
             </div>
           ) : (
             <AnimatePresence mode="wait" initial={false}>
@@ -288,7 +312,13 @@ export function App({
                   <>
                     {!future && students.length > 0 && (
                       <div className="section-label compact-label">
-                        <h2>{paymentStatus === 'paid' ? 'Оплатили' : 'Ожидают оплаты'}</h2>
+                        <h2>
+                          {paymentStatus === 'all'
+                            ? t('Оплаты за месяц')
+                            : paymentStatus === 'paid'
+                              ? t('Оплатили')
+                              : t('Ожидают оплаты')}
+                        </h2>
                         <PaymentFilter value={paymentStatus} onChange={setPaymentStatus} />
                       </div>
                     )}
@@ -314,18 +344,18 @@ export function App({
                             </div>
                             <div className="payment-figures">
                               <div>
-                                <span>Оплачено</span>
+                                <span>{t('Оплачено')}</span>
                                 <strong>{formatMoney(debtor.paid)}</strong>
                               </div>
                               <div>
-                                <span>Осталось</span>
+                                <span>{t('Осталось')}</span>
                                 <strong className="debt-figure">{formatMoney(debtor.debt)}</strong>
                               </div>
                             </div>
                             <div
                               className="progress"
                               role="progressbar"
-                              aria-label={`Оплата ${debtor.name}`}
+                              aria-label={`${t('Оплата')} ${debtor.name}`}
                               aria-valuenow={Math.min(
                                 100,
                                 Math.round((debtor.paid / debtor.monthlyAmount) * 100),
@@ -347,12 +377,13 @@ export function App({
                               </a>
                               <button
                                 className="button secondary small"
+                                disabled={debtor.debt === 0}
                                 onClick={() =>
                                   showModal({ type: 'payment', studentId: debtor.studentId })
                                 }
                               >
                                 <Plus size={15} />
-                                Внести оплату
+                                {t('Внести оплату')}{' '}
                               </button>
                             </div>
                           </motion.article>
@@ -364,17 +395,17 @@ export function App({
                         icon={future ? <CalendarDays size={25} /> : <CircleCheck size={25} />}
                         title={
                           future
-                            ? 'Месяц ещё не начался'
+                            ? t('Месяц ещё не начался')
                             : students.length
-                              ? 'Нет учеников по фильтру'
-                              : 'Нет учеников'
+                              ? t('Нет учеников по фильтру')
+                              : t('Нет учеников')
                         }
                         text={
                           future
-                            ? 'Данные появятся, когда наступит этот месяц.'
+                            ? t('Данные появятся, когда наступит этот месяц.')
                             : students.length
-                              ? 'Выберите другой статус оплаты с помощью фильтра.'
-                              : 'Добавьте первого ученика, чтобы начать учёт оплат.'
+                              ? t('Выберите другой статус оплаты с помощью фильтра.')
+                              : t('Добавьте первого ученика, чтобы начать учёт оплат.')
                         }
                         action={
                           !future && !students.length ? (
@@ -383,13 +414,20 @@ export function App({
                               onClick={() => showModal({ type: 'student' })}
                             >
                               <Plus size={17} />
-                              Добавить ученика
+                              {t('Добавить ученика')}{' '}
                             </button>
                           ) : undefined
                         }
                       />
                     )}
                   </>
+                ) : tab === 'courses' ? (
+                  <Courses
+                    courses={courses}
+                    onCreate={() => showModal({ type: 'course' })}
+                    onEdit={(course) => showModal({ type: 'course', course })}
+                    onDelete={(course) => showModal({ type: 'deleteCourse', course })}
+                  />
                 ) : (
                   <>
                     <div className="students-toolbar">
@@ -398,33 +436,35 @@ export function App({
                         <input
                           value={query}
                           onChange={(event) => setQuery(event.target.value)}
-                          placeholder="Имя, группа или телефон"
-                          aria-label="Поиск учеников"
+                          placeholder={t('Имя, группа или телефон')}
+                          aria-label={t('Поиск учеников')}
                         />
                         {query && (
                           <button
                             className="icon-button"
                             onClick={() => setQuery('')}
-                            aria-label="Очистить поиск"
+                            aria-label={t('Очистить поиск')}
                           >
                             <X size={16} />
                           </button>
                         )}
                       </label>
-                      <Tip label="Добавить ученика">
+                      <Tip label={t('Добавить ученика')}>
                         <button
                           className="button primary add-student"
-                          aria-label="Добавить ученика"
+                          aria-label={t('Добавить ученика')}
                           onClick={() => showModal({ type: 'student' })}
                         >
                           <Plus size={19} />
-                          <span>Добавить</span>
+                          <span>{t('Добавить')}</span>
                         </button>
                       </Tip>
                     </div>
                     <div className="section-label">
-                      <h2>Все ученики</h2>
-                      <span>{filtered.length} записей</span>
+                      <h2>{t('Все ученики')}</h2>
+                      <span>
+                        {filtered.length} {t('записей')}
+                      </span>
                     </div>
                     <div className="inset-list student-list">
                       <AnimatePresence initial={false}>
@@ -449,7 +489,7 @@ export function App({
                               </div>
                               <div className="student-fee">
                                 <strong>{formatMoney(student.monthlyAmount)}</strong>
-                                <small>в месяц</small>
+                                <small>{t('в месяц')}</small>
                               </div>
                             </div>
                             <div className="student-row-bottom">
@@ -457,10 +497,10 @@ export function App({
                                 {student.phone}
                               </a>
                               <div className="student-actions">
-                                <Tip label="История оплат">
+                                <Tip label={t('История оплат')}>
                                   <button
                                     className="icon-button"
-                                    aria-label={`История оплат: ${student.name}`}
+                                    aria-label={`${t('История оплат')}: ${student.name}`}
                                     onPointerEnter={() => {
                                       void prefetchHistory(student.id).catch(() => undefined);
                                     }}
@@ -481,28 +521,28 @@ export function App({
                                     )}
                                   </button>
                                 </Tip>
-                                <Tip label="Редактировать">
+                                <Tip label={t('Редактировать')}>
                                   <button
                                     className="icon-button"
-                                    aria-label={`Редактировать: ${student.name}`}
+                                    aria-label={`${t('Редактировать')}: ${student.name}`}
                                     onClick={() => showModal({ type: 'student', student })}
                                   >
                                     <Pencil size={16} />
                                   </button>
                                 </Tip>
-                                <Tip label="Удалить ученика">
+                                <Tip label={t('Удалить ученика')}>
                                   <button
                                     className="icon-button danger-text"
-                                    aria-label={`Удалить: ${student.name}`}
+                                    aria-label={`${t('Удалить')}: ${student.name}`}
                                     onClick={() => showModal({ type: 'delete', student })}
                                   >
                                     <Trash2 size={16} />
                                   </button>
                                 </Tip>
-                                <Tip label="Внести оплату">
+                                <Tip label={t('Внести оплату')}>
                                   <button
                                     className="icon-button pay-icon"
-                                    aria-label={`Внести оплату: ${student.name}`}
+                                    aria-label={`${t('Внести оплату')}: ${student.name}`}
                                     disabled={future}
                                     onClick={() =>
                                       showModal({ type: 'payment', studentId: student.id })
@@ -520,11 +560,11 @@ export function App({
                     {!filtered.length && (
                       <Empty
                         icon={<Users size={25} />}
-                        title={query ? 'Никого не нашли' : 'Нет учеников'}
+                        title={query ? t('Никого не нашли') : t('Нет учеников')}
                         text={
                           query
-                            ? 'Попробуйте другое имя, телефон или название группы.'
-                            : 'Добавьте первого ученика и месячную стоимость обучения.'
+                            ? t('Попробуйте другое имя, телефон или название группы.')
+                            : t('Добавьте первого ученика и месячную стоимость обучения.')
                         }
                         action={
                           !query ? (
@@ -533,7 +573,7 @@ export function App({
                               onClick={() => showModal({ type: 'student' })}
                             >
                               <Plus size={17} />
-                              Добавить ученика
+                              {t('Добавить ученика')}{' '}
                             </button>
                           ) : undefined
                         }
@@ -555,7 +595,18 @@ export function App({
         {modal?.type === 'payment' && (
           <PaymentForm students={students} initialId={modal.studentId} onSaved={saved} />
         )}
-        {modal?.type === 'student' && <StudentForm student={modal.student} onSaved={saved} />}
+        {modal?.type === 'student' && (
+          <StudentForm
+            student={modal.student}
+            courses={courses}
+            onCreateCourse={() => showModal({ type: 'course' })}
+            onSaved={saved}
+          />
+        )}
+        {modal?.type === 'course' && <CourseForm course={modal.course} onSaved={saved} />}
+        {modal?.type === 'deleteCourse' && (
+          <DeleteCourse course={modal.course} onSaved={saved} onCancel={close} />
+        )}
         {modal?.type === 'history' && <History student={modal.student} />}
         {modal?.type === 'delete' && (
           <DeleteStudent student={modal.student} onSaved={saved} onCancel={close} />
@@ -577,7 +628,7 @@ export function App({
               {toast.text}
               <button
                 className="icon-button"
-                aria-label="Закрыть уведомление"
+                aria-label={t('Закрыть уведомление')}
                 onClick={() => setToast(undefined)}
               >
                 <X size={16} />

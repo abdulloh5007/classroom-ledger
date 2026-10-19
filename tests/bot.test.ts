@@ -135,6 +135,23 @@ describe('Telegram handlers with mocked API transport', () => {
     expect(service.payments(student.id)).toHaveLength(1);
     expect(calls.find((call) => call.method === 'sendMessage')?.payload.parse_mode).toBe('HTML');
   });
+  it('не принимает переплату через команду бота', async () => {
+    const student = service.createStudent({
+      name: 'Test',
+      phone: '+998901234567',
+      group: 'A2',
+      monthlyAmount: 500000,
+    });
+    await bot.handleUpdate(message(owner, `/pay ${student.id} 500001`));
+    expect(service.payments(student.id)).toHaveLength(0);
+    expect(
+      calls.some(
+        (call) =>
+          call.method === 'sendMessage' &&
+          String(call.payload.text).includes('превышает остаток долга'),
+      ),
+    ).toBe(true);
+  });
   it('обычный администратор не может открыть /admins и owner callback', async () => {
     service.addAdmin(owner, outsider);
     await bot.handleUpdate(message(outsider, '/admins'));

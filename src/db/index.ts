@@ -9,7 +9,7 @@ export function openDatabase(path: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
   const version = db.pragma('user_version', { simple: true }) as number;
-  if (version > 3) {
+  if (version > 4) {
     db.close();
     throw new Error('Версия БД новее приложения');
   }
@@ -63,6 +63,26 @@ export function openDatabase(path: string): Database.Database {
         );
         CREATE INDEX login_attempts_expiry ON login_attempts(expires_at);
         PRAGMA user_version = 3;
+      `);
+    })();
+  if (version < 4)
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE courses (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 80),
+          monthly_amount INTEGER NOT NULL CHECK(typeof(monthly_amount)='integer' AND monthly_amount BETWEEN 1 AND 1000000000000),
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          UNIQUE(name, monthly_amount)
+        );
+        ALTER TABLE students ADD COLUMN course_id INTEGER REFERENCES courses(id) ON DELETE RESTRICT;
+        INSERT INTO courses(name, monthly_amount) SELECT DISTINCT group_name, monthly_amount FROM students ORDER BY group_name, monthly_amount;
+        UPDATE students SET course_id=(SELECT id FROM courses WHERE name=students.group_name AND monthly_amount=students.monthly_amount);
+        CREATE INDEX students_course ON students(course_id);
+        CREATE TRIGGER course_student_tariff AFTER UPDATE OF name, monthly_amount ON courses BEGIN
+          UPDATE students SET group_name=NEW.name, monthly_amount=NEW.monthly_amount WHERE course_id=NEW.id;
+        END;
+        PRAGMA user_version = 4;
       `);
     })();
   return db;

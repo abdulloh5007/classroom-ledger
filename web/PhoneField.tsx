@@ -1,3 +1,4 @@
+import { useI18n } from './i18n';
 import { useLayoutEffect, useRef } from 'react';
 import { formatUzPhone, PHONE_PREFIX, phoneCaret, uzPhoneDigits } from '../src/phone';
 
@@ -10,6 +11,8 @@ export function PhoneField({
   onChange: (value: string) => void;
   error?: string;
 }) {
+  const { t } = useI18n();
+
   const input = useRef<HTMLInputElement>(null);
   const desiredCaret = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {
@@ -35,7 +38,7 @@ export function PhoneField({
   }
   return (
     <label className="field" htmlFor="student-phone">
-      <span id="student-phone-label">Телефон</span>
+      <span id="student-phone-label">{t('Телефон')}</span>
       <input
         ref={input}
         id="student-phone"
@@ -101,7 +104,7 @@ export function PhoneField({
       />
       {error && (
         <span id="phone-error" className="field-error">
-          {error}
+          {t(error)}
         </span>
       )}
     </label>
