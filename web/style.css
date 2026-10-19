@@ -2,6 +2,8 @@
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Geist', 'Segoe UI', sans-serif;
   color-scheme: light;
   --bg: #fafafa;
+  --tab-track: #ececec;
+  --tab-selected: #fff;
   --surface: #fff;
   --subtle: #fafafa;
   --hover: #ededed;
@@ -28,6 +30,8 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
     --bg: #0a0a0a;
+    --tab-track: #181818;
+    --tab-selected: #333333;
     --surface: #141414;
     --subtle: #222222;
     --hover: #2a2a2a;
@@ -49,6 +53,8 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #0a0a0a;
+  --tab-track: #181818;
+  --tab-selected: #333333;
   --surface: #141414;
   --subtle: #222222;
   --hover: #2a2a2a;
@@ -1321,7 +1327,7 @@ html {
   padding-top: 0;
 }
 .wallet-hero {
-  --hero: #ededed;
+  --hero: #dceefb;
   --muted: color-mix(in srgb, var(--ink) 72%, var(--hero));
   background: var(--hero);
   padding: calc(18px + env(safe-area-inset-top)) 16px 14px;
@@ -1331,11 +1337,11 @@ html {
   isolation: isolate;
 }
 :root[data-theme='dark'] .wallet-hero {
-  --hero: #171717;
+  --hero: #172d40;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) .wallet-hero {
-    --hero: #171717;
+    --hero: #172d40;
   }
 }
 .wallet-logout {
@@ -1426,29 +1432,43 @@ html {
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.wallet-arrow {
+.wallet-edge {
   position: absolute;
-  top: -14px;
+  top: calc(66px + env(safe-area-inset-top));
+  bottom: 0;
+  width: 20%;
   z-index: 2;
-  background: color-mix(in srgb, var(--hero) 88%, transparent);
-  backdrop-filter: blur(5px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 16px;
+  touch-action: pan-y;
 }
-.wallet-arrow.previous {
-  left: 7px;
+.wallet-edge.previous {
+  left: 0;
 }
-.wallet-arrow.next {
-  right: 7px;
+.wallet-edge.next {
+  right: 0;
+}
+.wallet-edge:hover,
+.wallet-edge:active {
+  background: transparent;
+  transform: none;
+}
+.wallet-edge:focus-visible {
+  outline-offset: -5px;
 }
 .wallet-tabs {
   margin: 20px 18px 0;
 }
 .wallet-tabs .segment-control {
   margin: 0;
-  background: color-mix(in srgb, var(--ink) 6%, var(--bg));
+  background: var(--tab-track);
 }
 .wallet-tabs .segment-active {
-  background: var(--surface);
-  box-shadow: 0 1px 6px #00000008;
+  background: var(--tab-selected);
+  box-shadow: 0 1px 4px #00000012;
+  border: 1px solid color-mix(in srgb, var(--ink) 5%, transparent);
 }
 .wallet-content {
   padding: 20px 18px 0;
@@ -1618,4 +1638,93 @@ html {
     max-width: 440px;
     margin: 22px auto 0;
   }
+}
+
+/* The old snapshot stays intact outside the expanding new-theme circle. */
+html.theme-revealing *,
+html.theme-revealing *::before,
+html.theme-revealing *::after {
+  transition: none !important;
+}
+html.theme-revealing::view-transition-group(root),
+html.theme-revealing::view-transition-old(root),
+html.theme-revealing::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html.theme-revealing::view-transition-new(root) {
+  z-index: 2;
+}
+html.theme-revealing::view-transition-old(root) {
+  z-index: 1;
+}
+.payment-filter {
+  position: relative;
+  color: var(--muted);
+}
+.payment-filter[data-state='open'] {
+  color: var(--ink);
+  background: var(--hover);
+}
+.filter-dot {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink);
+  top: 7px;
+  right: 7px;
+}
+.filter-popover {
+  z-index: 65;
+  width: min(270px, calc(100vw - 32px));
+  max-height: var(--radix-popover-content-available-height);
+  overflow-y: auto;
+  padding: 7px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  box-shadow: 0 12px 44px #00000020;
+  transform-origin: var(--radix-popover-content-transform-origin);
+}
+.filter-caption {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px 12px;
+}
+.filter-popover button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 12px;
+  text-align: left;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+}
+.filter-popover button:hover,
+.filter-popover button:focus-visible {
+  background: var(--hover);
+}
+.filter-popover button[aria-checked='true'] {
+  background: var(--subtle);
+}
+.filter-popover button span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.filter-popover strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.filter-popover small {
+  font-size: 12px;
+  color: var(--muted);
 }

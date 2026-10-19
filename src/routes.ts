@@ -34,6 +34,10 @@ export function registerRoutes(app: FastifyInstance, service: LedgerService): vo
       .code(201)
       .send(service.addPayment(paramsSchema.parse(request.params).id, request.body));
   });
+  app.get('/balances', async (request) => {
+    const { month } = z.object({ month: monthSchema.optional() }).strict().parse(request.query);
+    return service.monthlyBalances(month);
+  });
   app.get('/debtors', async (request) => {
     const { month } = z.object({ month: monthSchema.optional() }).strict().parse(request.query);
     return service.debtors(month);

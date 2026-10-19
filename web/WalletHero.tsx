@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import type { Debtor } from '../src/contracts';
 import { currentMonth, shiftMonth, monthLabel } from '../src/calendar';
 import { MonthPicker } from './MonthPicker';
@@ -26,6 +26,7 @@ export function WalletHero({
 }) {
   const reduced = useReducedMotion();
   const carousel = useRef<HTMLDivElement>(null);
+  const moved = useRef(false);
   const [drag, setDrag] = useState(0);
   const [dragging, setDragging] = useState(false);
   const future = month > currentMonth();
@@ -44,7 +45,32 @@ export function WalletHero({
     }
   }
   return (
-    <section className="wallet-hero" aria-label="Сводка оплат за месяц">
+    <motion.section
+      className="wallet-hero"
+      aria-label="Сводка оплат за месяц"
+      style={{ touchAction: 'pan-y' }}
+      onPointerDownCapture={() => {
+        moved.current = false;
+      }}
+      onPanStart={() => setDragging(true)}
+      onPan={(_, info) => {
+        if (Math.hypot(info.offset.x, info.offset.y) > 8) moved.current = true;
+        if (!reduced) setDrag(info.offset.x);
+      }}
+      onPointerCancel={() => {
+        setDragging(false);
+        setDrag(0);
+        moved.current = true;
+      }}
+      onPanEnd={(_, info) => {
+        setDragging(false);
+        setDrag(0);
+        if (Math.abs(info.offset.x) > 45 && Math.abs(info.offset.x) > Math.abs(info.offset.y)) {
+          moved.current = true;
+          shift(info.offset.x < 0 ? 1 : -1);
+        }
+      }}
+    >
       {onLogout && (
         <button
           className="icon-button wallet-logout"
@@ -57,43 +83,19 @@ export function WalletHero({
       )}
       <MonthPicker month={month} direction={direction} onChange={onMonthChange} />
       <div className="wallet-balance-area">
-        <button
-          className="icon-button wallet-arrow previous"
-          aria-label="Предыдущий месяц"
-          disabled={month === '1900-01'}
-          onClick={() => shift(-1)}
-        >
-          <ChevronLeft size={22} />
-        </button>
         <motion.div
           ref={carousel}
           className="wallet-carousel"
           aria-roledescription="карусель"
           aria-label="Сумма и число должников по месяцам"
-          style={{ touchAction: 'pan-y' }}
-          onPanStart={() => {
-            setDragging(true);
-          }}
-          onPan={(_, info) => {
-            if (!reduced) setDrag(info.offset.x);
-          }}
-          onPointerCancel={() => {
-            setDragging(false);
-            setDrag(0);
-          }}
-          onPanEnd={(_, info) => {
-            setDragging(false);
-            setDrag(0);
-            if (Math.abs(info.offset.x) > 45 && Math.abs(info.offset.x) > Math.abs(info.offset.y))
-              shift(info.offset.x < 0 ? 1 : -1);
-          }}
         >
           <AnimatePresence initial={false}>
             {slides.map(({ key, offset }) => {
               const relative = Math.abs(
-                offset + drag / ((carousel.current?.clientWidth ?? 390) * 0.76 * 0.68),
+                offset + drag / ((carousel.current?.clientWidth ?? 390) * 0.76 * 0.75),
               );
-              const rows = key <= currentMonth() ? months[key] : undefined;
+              const rows =
+                key <= currentMonth() ? months[key]?.filter((row) => row.debt > 0) : undefined;
               const amount =
                 rows && ready
                   ? new Intl.NumberFormat('ru-RU').format(
@@ -109,12 +111,12 @@ export function WalletHero({
                   role="group"
                   aria-label={monthLabel(key)}
                   initial={{
-                    x: `calc(${offset * 68}% + 0px)`,
+                    x: `calc(${offset * 75}% + 0px)`,
                     scale: reduced ? 1 : 0.6,
                     opacity: 0,
                   }}
                   animate={{
-                    x: `calc(${offset * 68}% + ${drag}px)`,
+                    x: `calc(${offset * 75}% + ${drag}px)`,
                     scale: reduced ? 1 : 1 - Math.min(relative, 1.25) * 0.4,
                     opacity:
                       relative <= 1
@@ -123,7 +125,7 @@ export function WalletHero({
                     rotateY: reduced ? 0 : offset * -16,
                   }}
                   exit={{
-                    x: `calc(${-direction * 136}% + 0px)`,
+                    x: `calc(${-direction * 150}% + 0px)`,
                     scale: reduced ? 1 : 0.5,
                     opacity: 0,
                   }}
@@ -151,22 +153,25 @@ export function WalletHero({
             })}
           </AnimatePresence>
         </motion.div>
-        <button
-          className="icon-button wallet-arrow next"
-          aria-label="Следующий месяц"
-          disabled={month === '9999-11'}
-          onClick={() => shift(1)}
-        >
-          <ChevronRight size={22} />
-        </button>
       </div>
+      {([-1, 1] as const).map((delta) => (
+        <button
+          key={delta}
+          className={`wallet-edge ${delta < 0 ? 'previous' : 'next'}`}
+          aria-label={delta < 0 ? 'Предыдущий месяц' : 'Следующий месяц'}
+          disabled={month === (delta < 0 ? '1900-01' : '9999-11')}
+          onClick={(event) => {
+            if (!moved.current || event.detail === 0) shift(delta);
+          }}
+        />
+      ))}
       <span className="sr-only" role="status">
         {future
           ? 'Будущий месяц: данных пока нет'
           : !months[month] || !ready
             ? 'Загрузка сводки'
-            : `${monthLabel(month)}: к сбору ${months[month]!.reduce((sum, row) => sum + row.debt, 0)} сум, должников ${months[month]!.length} из ${totalStudents}`}
+            : `${monthLabel(month)}: к сбору ${months[month]!.reduce((sum, row) => sum + row.debt, 0)} сум, должников ${months[month]!.filter((row) => row.debt > 0).length} из ${totalStudents}`}
       </span>
-    </section>
+    </motion.section>
   );
 }

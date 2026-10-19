@@ -154,14 +154,17 @@ export class LedgerService {
     return { paid, debt: Math.max(0, student.monthlyAmount - paid) };
   }
   debtors(month = currentMonth()): Debtor[] {
+    return this.monthlyBalances(month).filter((row) => row.debt > 0);
+  }
+  monthlyBalances(month = currentMonth()): Debtor[] {
     const { start, end } = monthRange(month);
     const rows = this.db
       .prepare(
         `
       SELECT s.id AS studentId, s.name, s.phone, s.group_name AS "group", s.monthly_amount AS monthlyAmount,
-        COALESCE(SUM(p.amount), 0) AS paid, s.monthly_amount - COALESCE(SUM(p.amount), 0) AS debt
+        COALESCE(SUM(p.amount), 0) AS paid, MAX(0, s.monthly_amount - COALESCE(SUM(p.amount), 0)) AS debt
       FROM students s LEFT JOIN payments p ON p.student_id=s.id AND p.paid_at>=? AND p.paid_at<?
-      GROUP BY s.id HAVING paid < s.monthly_amount ORDER BY debt DESC, s.name, s.id
+      GROUP BY s.id ORDER BY debt DESC, s.name, s.id
     `,
       )
       .all(start, end) as Debtor[];

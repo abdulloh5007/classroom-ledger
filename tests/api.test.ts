@@ -13,7 +13,7 @@ it('закрывает финансовые API сессией, не вызыв�
     password: 'test-only-password-123456',
   });
   try {
-    for (const url of ['/students', '/debtors']) {
+    for (const url of ['/students', '/debtors', '/balances']) {
       const response = await secured.inject(url);
       expect(response.statusCode).toBe(401);
       expect(response.headers['www-authenticate']).toBeUndefined();
@@ -171,6 +171,8 @@ it('CRUD учеников и контракт оплат', async () => {
 it('400 на некорректные входы и JSON-ошибки единого формата', async () => {
   for (const url of [
     '/debtors?month=2026-13',
+    '/balances?month=2026-13',
+    '/balances?month=2026-10&extra=1',
     '/debtors?month=',
     '/debtors?month=2026-10&month=2026-11',
     '/students/no/payments',
@@ -218,4 +220,30 @@ it('неизвестные маршруты и ученики возвращаю
     (await app.inject({ method: 'PATCH', url: '/students/999', payload: { name: 'Имя' } }))
       .statusCode,
   ).toBe(404);
+});
+
+it('balances возвращает нулевые, частичные, полные и избыточные оплаты без отрицательного долга', async () => {
+  const service = new LedgerService(db);
+  const amounts = [0, 200000, 600000, 700000];
+  const students = amounts.map((_, index) =>
+    service.createStudent({ ...input, name: `Ученик ${index}` }),
+  );
+  amounts.forEach((amount, index) => {
+    if (amount) service.addPayment(students[index]!.id, { amount, date: '2026-10-31' });
+  });
+  service.addPayment(students[0]!.id, { amount: 600000, date: '2026-11-01' });
+  const response = await app.inject('/balances?month=2026-10');
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject([
+    { studentId: students[0]!.id, paid: 0, debt: 600000 },
+    { studentId: students[1]!.id, paid: 200000, debt: 400000 },
+    { studentId: students[2]!.id, paid: 600000, debt: 0 },
+    { studentId: students[3]!.id, paid: 700000, debt: 0 },
+  ]);
+  expect((await app.inject('/debtors?month=2026-10')).json()).toEqual(
+    response.json<unknown[]>().slice(0, 2),
+  );
+  expect((await app.inject('/balances')).json()).toEqual(
+    (await app.inject(`/balances?month=${currentMonth()}`)).json(),
+  );
 });

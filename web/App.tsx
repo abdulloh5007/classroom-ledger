@@ -24,6 +24,8 @@ import { prefetchHistory } from './history';
 import { useLedger } from './useLedger';
 import { WalletHero } from './WalletHero';
 import { FloatingControls } from './FloatingControls';
+import { PaymentFilter, type PaymentStatus } from './PaymentFilter';
+import { revealTheme } from './theme';
 
 type Modal =
   | { type: 'payment'; studentId?: number }
@@ -72,7 +74,14 @@ export function App({
   const loading = !ready || (tab === 'debtors' && monthLoading);
   const error = studentsError || (tab === 'debtors' ? monthError : '');
   const future = month > currentMonth();
-  const debtors = future ? [] : (months[month] ?? []);
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('unpaid');
+  const debtors = (future ? [] : (months[month] ?? [])).filter((row) =>
+    paymentStatus === 'unpaid'
+      ? row.paid === 0
+      : paymentStatus === 'partial'
+        ? row.paid > 0 && row.debt > 0
+        : row.debt === 0,
+  );
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState<Modal | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -277,9 +286,10 @@ export function App({
               >
                 {tab === 'debtors' ? (
                   <>
-                    {!future && debtors.length > 0 && (
+                    {!future && students.length > 0 && (
                       <div className="section-label compact-label">
-                        <h2>Ожидают оплаты</h2>
+                        <h2>{paymentStatus === 'paid' ? 'Оплатили' : 'Ожидают оплаты'}</h2>
+                        <PaymentFilter value={paymentStatus} onChange={setPaymentStatus} />
                       </div>
                     )}
                     <div className="card-list">
@@ -316,7 +326,10 @@ export function App({
                               className="progress"
                               role="progressbar"
                               aria-label={`Оплата ${debtor.name}`}
-                              aria-valuenow={Math.round((debtor.paid / debtor.monthlyAmount) * 100)}
+                              aria-valuenow={Math.min(
+                                100,
+                                Math.round((debtor.paid / debtor.monthlyAmount) * 100),
+                              )}
                               aria-valuemin={0}
                               aria-valuemax={100}
                             >
@@ -353,14 +366,14 @@ export function App({
                           future
                             ? 'Месяц ещё не начался'
                             : students.length
-                              ? 'Всё оплачено'
+                              ? 'Нет учеников по фильтру'
                               : 'Нет учеников'
                         }
                         text={
                           future
                             ? 'Данные появятся, когда наступит этот месяц.'
                             : students.length
-                              ? 'За выбранный месяц задолженностей нет.'
+                              ? 'Выберите другой статус оплаты с помощью фильтра.'
                               : 'Добавьте первого ученика, чтобы начать учёт оплат.'
                         }
                         action={
@@ -535,7 +548,7 @@ export function App({
       </main>
       <FloatingControls
         dark={dark}
-        onTheme={() => setTheme(dark ? 'light' : 'dark')}
+        onTheme={(button) => void revealTheme(button, () => setTheme(dark ? 'light' : 'dark'))}
         hidden={sheetOpen}
       />
       <Sheet open={sheetOpen} title={modalTitle} description={modalDescription} onClose={close}>

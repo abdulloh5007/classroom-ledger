@@ -24,7 +24,7 @@ export function useLedger(month: string) {
     const controller = new AbortController();
     const version = generation.current.value;
     requests.current.add(controller);
-    const task = api<Debtor[]>(`/debtors?month=${key}`, { signal: controller.signal })
+    const task = api<Debtor[]>(`/balances?month=${key}`, { signal: controller.signal })
       .then((rows) => {
         if (controller.signal.aborted || version !== generation.current.value) return;
         cache.current.delete(key);

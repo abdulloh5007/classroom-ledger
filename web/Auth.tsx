@@ -5,6 +5,7 @@ import { api } from './api';
 import { App } from './App';
 import { Spinner } from './components';
 import { invalidateHistory } from './history';
+import { revealTheme } from './theme';
 
 interface Session {
   authenticationRequired: boolean;
@@ -74,7 +75,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
         <button
           className="icon-button login-theme"
           aria-label={dark ? 'Включить светлую тему' : 'Включить тёмную тему'}
-          onClick={toggleTheme}
+          onClick={(event) => void revealTheme(event.currentTarget, toggleTheme)}
         >
           {dark ? <Sun size={19} /> : <Moon size={19} />}
         </button>

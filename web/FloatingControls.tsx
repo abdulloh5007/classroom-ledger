@@ -8,7 +8,7 @@ export function FloatingControls({
   hidden,
 }: {
   dark: boolean;
-  onTheme: () => void;
+  onTheme: (button: HTMLButtonElement) => void;
   hidden: boolean;
 }) {
   const [visible, setVisible] = useState(true);
@@ -54,7 +54,7 @@ export function FloatingControls({
           whileTap={{ scale: reduced ? 1 : 0.94 }}
           transition={transition}
           aria-label={dark ? 'Включить светлую тему' : 'Включить тёмную тему'}
-          onClick={onTheme}
+          onClick={(event) => onTheme(event.currentTarget)}
         >
           {dark ? <Sun size={20} /> : <Moon size={20} />}
         </motion.button>
