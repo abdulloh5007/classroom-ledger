@@ -194,10 +194,10 @@ export function App({
           totalStudents={students.length}
           ready={ready}
           onMonthChange={selectMonth}
-          onPay={() => showModal({ type: 'payment' })}
           onLogout={onLogout}
           loggingOut={loggingOut}
-        >
+        />
+        <div className="wallet-tabs">
           <div className="segment-control" role="tablist" aria-label="Раздел учёта">
             {(
               [
@@ -248,7 +248,7 @@ export function App({
               </button>
             ))}
           </div>
-        </WalletHero>
+        </div>
         <div className="wallet-content">
           {error ? (
             <div className="network-error" role="alert">

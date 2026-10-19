@@ -1,7 +1,6 @@
-import type { ReactNode } from 'react';
 import { useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, LogOut, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import type { Debtor } from '../src/contracts';
 import { currentMonth, shiftMonth, monthLabel } from '../src/calendar';
 import { MonthPicker } from './MonthPicker';
@@ -13,10 +12,8 @@ export function WalletHero({
   totalStudents,
   ready,
   onMonthChange,
-  onPay,
   onLogout,
   loggingOut,
-  children,
 }: {
   month: string;
   direction: number;
@@ -24,10 +21,8 @@ export function WalletHero({
   totalStudents: number;
   ready: boolean;
   onMonthChange: (month: string) => void;
-  onPay: () => void;
   onLogout?: () => Promise<void>;
   loggingOut: boolean;
-  children: ReactNode;
 }) {
   const reduced = useReducedMotion();
   const carousel = useRef<HTMLDivElement>(null);
@@ -61,7 +56,6 @@ export function WalletHero({
         </button>
       )}
       <MonthPicker month={month} direction={direction} onChange={onMonthChange} />
-      <p className="wallet-caption">Осталось собрать</p>
       <div className="wallet-balance-area">
         <button
           className="icon-button wallet-arrow previous"
@@ -173,15 +167,6 @@ export function WalletHero({
             ? 'Загрузка сводки'
             : `${monthLabel(month)}: к сбору ${months[month]!.reduce((sum, row) => sum + row.debt, 0)} сум, должников ${months[month]!.length} из ${totalStudents}`}
       </span>
-      <button
-        className="button primary wallet-pay"
-        onClick={onPay}
-        disabled={!ready || !totalStudents || future}
-      >
-        <Plus size={18} />
-        Внести оплату
-      </button>
-      {children}
     </section>
   );
 }

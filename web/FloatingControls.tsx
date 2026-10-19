@@ -41,16 +41,17 @@ export function FloatingControls({
       cancelAnimationFrame(frame);
     };
   }, []);
-  const transition = { duration: reduced ? 0 : 0.26, ease: [0.32, 0.72, 0, 1] as const };
+  const transition = { duration: reduced ? 0 : 0.34, ease: [0.32, 0.72, 0, 1] as const };
   return (
     <AnimatePresence>
       {visible && !hidden && (
         <motion.button
           key="theme"
           className="icon-button floating-control floating-theme"
-          initial={{ y: reduced ? 0 : 90, opacity: 0 }}
+          initial={{ y: reduced ? 0 : 128, opacity: reduced ? 0 : 1 }}
           animate={{ y: 0, opacity: 1 }}
-          exit={{ y: reduced ? 0 : 90, opacity: 0 }}
+          exit={{ y: reduced ? 0 : 128, opacity: reduced ? 0 : 1 }}
+          whileTap={{ scale: reduced ? 1 : 0.94 }}
           transition={transition}
           aria-label={dark ? 'Включить светлую тему' : 'Включить тёмную тему'}
           onClick={onTheme}
@@ -62,9 +63,10 @@ export function FloatingControls({
         <motion.button
           key="top"
           className="icon-button floating-control floating-top"
-          initial={{ y: reduced ? 0 : 90, opacity: 0 }}
+          initial={{ y: reduced ? 0 : 128, opacity: reduced ? 0 : 1 }}
           animate={{ y: 0, opacity: 1 }}
-          exit={{ y: reduced ? 0 : 90, opacity: 0 }}
+          exit={{ y: reduced ? 0 : 128, opacity: reduced ? 0 : 1 }}
+          whileTap={{ scale: reduced ? 1 : 0.94 }}
           transition={transition}
           aria-label="Вернуться наверх"
           onClick={() => window.scrollTo({ top: 0, behavior: reduced ? 'instant' : 'smooth' })}

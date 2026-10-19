@@ -1341,7 +1341,7 @@ html {
 .wallet-logout {
   position: absolute;
   top: calc(18px + env(safe-area-inset-top));
-  right: 14px;
+  left: 14px;
   color: var(--muted);
   z-index: 2;
 }
@@ -1364,14 +1364,9 @@ html {
 .wallet-month > svg {
   color: var(--muted);
 }
-.wallet-caption {
-  margin-top: 21px;
-  color: var(--muted);
-  font-size: 12px;
-}
 .wallet-balance-area {
   position: relative;
-  margin: 0 -16px;
+  margin: 18px -16px 6px;
 }
 .wallet-carousel {
   position: relative;
@@ -1444,16 +1439,14 @@ html {
 .wallet-arrow.next {
   right: 7px;
 }
-.wallet-pay {
-  margin-top: 8px;
-  min-width: 172px;
-  padding: 12px 23px;
+.wallet-tabs {
+  margin: 20px 18px 0;
 }
-.wallet-hero .segment-control {
-  margin: 26px 0 0;
-  background: color-mix(in srgb, var(--ink) 5%, var(--hero));
+.wallet-tabs .segment-control {
+  margin: 0;
+  background: color-mix(in srgb, var(--ink) 6%, var(--bg));
 }
-.wallet-hero .segment-active {
+.wallet-tabs .segment-active {
   background: var(--surface);
   box-shadow: 0 1px 6px #00000008;
 }
@@ -1480,6 +1473,10 @@ html {
   -webkit-backdrop-filter: blur(20px);
   box-shadow: 0 5px 20px #0000000d;
   z-index: 30;
+  transition:
+    background-color 200ms,
+    color 200ms,
+    box-shadow 200ms;
 }
 .floating-theme {
   right: max(18px, calc((100vw - 680px) / 2));
@@ -1505,21 +1502,11 @@ html {
   box-shadow: 0 16px 60px #0003;
   transform-origin: var(--radix-popover-content-transform-origin);
 }
-.month-popover[data-state='open'] {
-  animation: menu-in 260ms var(--curve);
+.month-chevron {
+  transition: transform 280ms var(--curve);
 }
-.month-popover[data-state='closed'] {
-  animation: menu-out 180ms var(--curve);
-}
-.month-picker-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-left: 10px;
-}
-.month-picker-header strong {
-  font-size: 14px;
-  font-weight: 500;
+.wallet-month[data-state='open'] .month-chevron {
+  transform: rotate(180deg);
 }
 .month-wheels {
   display: grid;
@@ -1529,14 +1516,6 @@ html {
 }
 .wheel-column {
   min-width: 0;
-}
-.wheel-label {
-  display: block;
-  text-align: center;
-  color: var(--muted);
-  font-size: 11px;
-  height: 28px;
-  line-height: 28px;
 }
 .wheel {
   height: 220px;
@@ -1585,7 +1564,7 @@ html {
 }
 .wheel-selection {
   position: absolute;
-  top: 116px;
+  top: 88px;
   height: 44px;
   left: 0;
   right: 0;
@@ -1612,16 +1591,13 @@ html {
   }
   .wallet-logout {
     top: 22px;
-    right: 22px;
+    left: 22px;
   }
   .wallet-content {
     padding: 24px 8px 0;
   }
   .wallet-carousel {
     height: 148px;
-  }
-  .wallet-caption {
-    margin-top: 26px;
   }
   .wallet-amount {
     font-size: 54px;
@@ -1638,14 +1614,8 @@ html {
   .wallet-arrow.next {
     right: 22px;
   }
-  .wallet-hero .segment-control {
+  .wallet-tabs {
     max-width: 440px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .month-popover[data-state] {
-    animation-duration: 1ms;
+    margin: 22px auto 0;
   }
 }
