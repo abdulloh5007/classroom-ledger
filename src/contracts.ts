@@ -44,22 +44,46 @@ export const courseSchema = z
 export const coursePatchSchema = courseSchema
   .partial()
   .refine((value) => Object.keys(value).length > 0, 'Нет полей для изменения');
+const courseEnrollmentSchema = legacyStudentSchema.pick({ name: true, phone: true }).extend({
+  courseId: z.coerce.number().int().positive('Выберите курс').max(Number.MAX_SAFE_INTEGER),
+});
+export const groupSchema = z
+  .object({ name: z.string().trim().min(1, 'Введите название группы').max(80), courseId: idSchema })
+  .strict();
 export const studentEnrollmentSchema = legacyStudentSchema
   .pick({ name: true, phone: true })
   .extend({
-    courseId: z.coerce.number().int().positive('Выберите курс').max(Number.MAX_SAFE_INTEGER),
+    groupId: z.coerce.number().int().positive('Выберите группу').max(Number.MAX_SAFE_INTEGER),
   });
-export const studentSchema = z.union([studentEnrollmentSchema, legacyStudentSchema]);
+export const studentSchema = z.union([
+  studentEnrollmentSchema,
+  courseEnrollmentSchema,
+  legacyStudentSchema,
+]);
 export const studentPatchSchema = z
-  .union([studentEnrollmentSchema.partial(), legacyStudentSchema.partial()])
+  .union([
+    studentEnrollmentSchema.partial(),
+    courseEnrollmentSchema.partial(),
+    legacyStudentSchema.partial(),
+  ])
   .refine((value) => Object.keys(value).length > 0, 'Нет полей для изменения');
 export const paymentSchema = z.object({ amount: moneySchema, date: dateSchema }).strict();
 export type StudentInput = z.infer<typeof studentSchema>;
+export interface Group {
+  id: number;
+  name: string;
+  courseId: number;
+  courseName: string;
+  monthlyAmount: number;
+  studentCount: number;
+  createdAt: string;
+}
 export interface Course {
   id: number;
   name: string;
   monthlyAmount: number;
   studentCount: number;
+  groupCount: number;
   createdAt: string;
 }
 export interface Student {
@@ -69,6 +93,7 @@ export interface Student {
   group: string;
   monthlyAmount: number;
   courseId: number;
+  groupId: number;
   createdAt: string;
 }
 export interface Payment {

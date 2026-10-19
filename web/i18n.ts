@@ -2,6 +2,23 @@ import { useSyncExternalStore } from 'react';
 
 export type Language = 'ru' | 'uz';
 const uz: Record<string, string> = {
+  'Меню группы': 'Guruh menyusi',
+  'Создать группу': 'Guruh yaratish',
+  'Сменить группу': 'Guruhni almashtirish',
+  'Название группы': 'Guruh nomi',
+  'Введите название группы': 'Guruh nomini kiriting',
+  'Выберите группу': 'Guruhni tanlang',
+  'Нет групп': 'Guruhlar yo‘q',
+  'Группа создана': 'Guruh yaratildi',
+  'Группа не найдена': 'Guruh topilmadi',
+  'Такая группа уже существует': 'Bunday guruh mavjud',
+  'Курс группы': 'Guruh kursi',
+  'Все ученики группы учатся на одном курсе.':
+    'Guruhdagi barcha o‘quvchilar bir xil kursda o‘qiydi.',
+  'Сначала создайте группу и выберите для неё курс.':
+    'Avval guruh yarating va uning kursini tanlang.',
+  'Нельзя удалить курс с группами': 'Guruhlari bor kursni o‘chirib bo‘lmaydi',
+
   'После оплаты': 'To‘lovdan so‘ng',
   Останется: 'Qoladi',
   'Будущий месяц: данных пока нет': 'Kelgusi oy: hozircha ma’lumot yo‘q',

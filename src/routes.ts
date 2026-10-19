@@ -6,6 +6,14 @@ import type { LedgerService } from './services/ledger.js';
 const paramsSchema = z.object({ id: idSchema }).strict();
 const emptyQuery = z.object({}).strict();
 export function registerRoutes(app: FastifyInstance, service: LedgerService): void {
+  app.get('/groups', async (request) => {
+    emptyQuery.parse(request.query);
+    return service.groups();
+  });
+  app.post('/groups', async (request, reply) => {
+    emptyQuery.parse(request.query);
+    return reply.code(201).send(service.createGroup(request.body));
+  });
   app.get('/courses', async (request) => {
     emptyQuery.parse(request.query);
     return service.courses();
@@ -24,8 +32,8 @@ export function registerRoutes(app: FastifyInstance, service: LedgerService): vo
     return reply.code(204).send();
   });
   app.get('/students', async (request) => {
-    emptyQuery.parse(request.query);
-    return service.students();
+    const { groupId } = z.object({ groupId: idSchema.optional() }).strict().parse(request.query);
+    return service.students(groupId);
   });
   app.post('/students', async (request, reply) => {
     emptyQuery.parse(request.query);
@@ -56,11 +64,17 @@ export function registerRoutes(app: FastifyInstance, service: LedgerService): vo
       .send(service.addPayment(paramsSchema.parse(request.params).id, request.body));
   });
   app.get('/balances', async (request) => {
-    const { month } = z.object({ month: monthSchema.optional() }).strict().parse(request.query);
-    return service.monthlyBalances(month);
+    const { month, groupId } = z
+      .object({ month: monthSchema.optional(), groupId: idSchema.optional() })
+      .strict()
+      .parse(request.query);
+    return service.monthlyBalances(month, groupId);
   });
   app.get('/debtors', async (request) => {
-    const { month } = z.object({ month: monthSchema.optional() }).strict().parse(request.query);
-    return service.debtors(month);
+    const { month, groupId } = z
+      .object({ month: monthSchema.optional(), groupId: idSchema.optional() })
+      .strict()
+      .parse(request.query);
+    return service.debtors(month, groupId);
   });
 }

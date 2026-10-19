@@ -37,6 +37,7 @@ it('не отдаёт данные и не выполняет изменения
     '/debtors',
     '/balances',
     '/courses',
+    '/groups',
     `/students/${student.id}/balance`,
     `/students/${student.id}/payments`,
     '/students%2f1/payments',

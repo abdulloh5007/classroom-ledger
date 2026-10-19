@@ -23,7 +23,7 @@ if (!production) {
   });
   app.use((request, response, next) => {
     const path = request.url?.split('?')[0] ?? '/';
-    if (/^\/(students|courses|debtors|balances|health|auth)(\/|$)/.test(path)) {
+    if (/^\/(students|groups|courses|debtors|balances|health|auth)(\/|$)/.test(path)) {
       next();
       return;
     }

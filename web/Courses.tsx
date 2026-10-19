@@ -62,15 +62,19 @@ export function Courses({
                 </Tip>
                 <Tip
                   label={
-                    course.studentCount ? t('Нельзя удалить курс с учениками') : t('Удалить курс')
+                    course.studentCount
+                      ? t('Нельзя удалить курс с учениками')
+                      : course.groupCount
+                        ? t('Нельзя удалить курс с группами')
+                        : t('Удалить курс')
                   }
                 >
                   <button
                     className="icon-button danger-text"
                     aria-label={`${t('Удалить курс')}: ${course.name}`}
-                    aria-disabled={course.studentCount > 0}
+                    aria-disabled={course.studentCount > 0 || course.groupCount > 0}
                     onClick={() => {
-                      if (!course.studentCount) onDelete(course);
+                      if (!course.studentCount && !course.groupCount) onDelete(course);
                     }}
                   >
                     <Trash2 size={16} />

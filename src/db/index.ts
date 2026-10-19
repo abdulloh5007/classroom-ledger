@@ -9,7 +9,7 @@ export function openDatabase(path: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
   const version = db.pragma('user_version', { simple: true }) as number;
-  if (version > 4) {
+  if (version > 5) {
     db.close();
     throw new Error('Версия БД новее приложения');
   }
@@ -83,6 +83,46 @@ export function openDatabase(path: string): Database.Database {
           UPDATE students SET group_name=NEW.name, monthly_amount=NEW.monthly_amount WHERE course_id=NEW.id;
         END;
         PRAGMA user_version = 4;
+      `);
+    })();
+  if (version < 5)
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE student_groups (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 80),
+          course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          UNIQUE(name, course_id)
+        );
+        ALTER TABLE students ADD COLUMN group_id INTEGER REFERENCES student_groups(id) ON DELETE RESTRICT;
+        INSERT INTO student_groups(name, course_id) SELECT DISTINCT group_name, course_id FROM students ORDER BY group_name, course_id;
+        UPDATE students SET group_id=(SELECT id FROM student_groups WHERE name=students.group_name AND course_id=students.course_id);
+        CREATE INDEX students_group ON students(group_id);
+        CREATE INDEX groups_course ON student_groups(course_id);
+        DROP TRIGGER course_student_tariff;
+        CREATE TRIGGER course_student_tariff AFTER UPDATE OF monthly_amount ON courses BEGIN
+          UPDATE students SET monthly_amount=NEW.monthly_amount WHERE course_id=NEW.id;
+        END;
+        CREATE TRIGGER group_course_immutable BEFORE UPDATE OF course_id ON student_groups WHEN NEW.course_id<>OLD.course_id BEGIN
+          SELECT RAISE(ABORT, 'Group course cannot be changed');
+        END;
+        CREATE TRIGGER group_student_name AFTER UPDATE OF name ON student_groups BEGIN
+          UPDATE students SET group_name=NEW.name WHERE group_id=NEW.id;
+        END;
+        CREATE TRIGGER group_student_match_insert BEFORE INSERT ON students BEGIN
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM student_groups g JOIN courses c ON c.id=g.course_id
+            WHERE g.id=NEW.group_id AND g.course_id=NEW.course_id AND g.name=NEW.group_name AND c.monthly_amount=NEW.monthly_amount
+          ) THEN RAISE(ABORT, 'Student must match the group course and tariff') END;
+        END;
+        CREATE TRIGGER group_student_match_update BEFORE UPDATE OF group_id, course_id, group_name, monthly_amount ON students BEGIN
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM student_groups g JOIN courses c ON c.id=g.course_id
+            WHERE g.id=NEW.group_id AND g.course_id=NEW.course_id AND g.name=NEW.group_name AND c.monthly_amount=NEW.monthly_amount
+          ) THEN RAISE(ABORT, 'Student must match the group course and tariff') END;
+        END;
+        PRAGMA user_version = 5;
       `);
     })();
   return db;

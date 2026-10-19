@@ -1,12 +1,7 @@
 import { useI18n } from './i18n';
 import { useEffect, useState, type FormEvent, type Dispatch, type SetStateAction } from 'react';
 import { ArrowDownLeft, Check, Trash2 } from 'lucide-react';
-import {
-  paymentSchema,
-  studentEnrollmentSchema,
-  type Student,
-  type Course,
-} from '../src/contracts';
+import { paymentSchema, studentEnrollmentSchema, type Student, type Group } from '../src/contracts';
 import { today } from '../src/calendar';
 import { api, ApiError } from './api';
 import { AmountField, Spinner, StudentSelect } from './components';
@@ -246,27 +241,29 @@ export function PaymentForm({
 }
 export function StudentForm({
   student,
-  courses,
-  onCreateCourse,
+  groups,
+  initialGroupId,
+  onCreateGroup,
   onSaved,
 }: {
-  courses: Course[];
-  onCreateCourse: () => void;
+  groups: Group[];
+  initialGroupId?: number;
+  onCreateGroup: () => void;
   student?: Student;
-  onSaved: (text: string) => void;
+  onSaved: (text: string, groupId?: number) => void;
 }) {
   const { t, formatMoney } = useI18n();
 
   const [name, setName] = useState(student?.name ?? '');
   const [phone, setPhone] = useState(formatUzPhone(student?.phone ?? ''));
-  const [courseId, setCourseId] = useState(student ? String(student.courseId) : '');
+  const [groupId, setGroupId] = useState(String(student?.groupId ?? initialGroupId ?? ''));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const result = studentEnrollmentSchema.safeParse({ name, phone, courseId: Number(courseId) });
+    const result = studentEnrollmentSchema.safeParse({ name, phone, groupId: Number(groupId) });
     if (uzPhoneDigits(phone).length !== 9) {
       setErrors({
         ...(!result.success ? result.error.flatten().fieldErrors : {}),
@@ -286,7 +283,7 @@ export function StudentForm({
         method: student ? 'PATCH' : 'POST',
         body: JSON.stringify(result.data),
       });
-      onSaved(student ? t('Данные ученика обновлены') : t('Ученик добавлен'));
+      onSaved(student ? t('Данные ученика обновлены') : t('Ученик добавлен'), Number(groupId));
     } catch (error) {
       const data = fields(error);
       setError(data.message);
@@ -346,38 +343,41 @@ export function StudentForm({
         />
         <div className="field">
           <StudentSelect
-            id="course-select"
-            label={t('Курс')}
-            placeholder={t('Выберите курс')}
-            value={courseId}
+            id="group-select"
+            label={t('Группа')}
+            placeholder={t('Выберите группу')}
+            value={groupId}
             onChange={(value) => {
-              setCourseId(value);
-              clearField(setErrors, 'courseId');
+              setGroupId(value);
+              clearField(setErrors, 'groupId');
             }}
-            options={courses.map((course) => ({
-              value: String(course.id),
-              label: `${course.name} · ${formatMoney(course.monthlyAmount)}`,
+            options={groups.map((group) => ({
+              value: String(group.id),
+              label: `${group.name} · ${group.courseName}`,
             }))}
-            error={errors.courseId?.[0]}
+            error={errors.groupId?.[0]}
           />
         </div>
-        {!courses.length && (
+        {!groups.length && (
           <div className="course-empty-hint">
-            <p className="form-hint">
-              {t('Сначала создайте курс, затем добавьте в него ученика.')}
-            </p>
-            <button className="button secondary full" type="button" onClick={onCreateCourse}>
-              {t('Добавить курс')}
+            <p className="form-hint">{t('Сначала создайте группу и выберите для неё курс.')}</p>
+            <button className="button secondary full" type="button" onClick={onCreateGroup}>
+              {t('Создать группу')}
             </button>
           </div>
         )}
-        {courseId && <p className="form-hint">{t('Стоимость задаётся в курсе')}</p>}
+        {groupId && (
+          <p className="form-hint">
+            {t('Курс группы')}: {groups.find((group) => String(group.id) === groupId)?.courseName} ·{' '}
+            {formatMoney(groups.find((group) => String(group.id) === groupId)?.monthlyAmount ?? 0)}
+          </p>
+        )}
         {error && (
           <p className="error-message" role="alert">
             {t(error)}
           </p>
         )}
-        <button className="button primary full" type="submit" disabled={busy || !courses.length}>
+        <button className="button primary full" type="submit" disabled={busy || !groups.length}>
           {busy ? <Spinner /> : <Check size={18} />}
           {busy ? t('Сохраняем…') : student ? t('Сохранить изменения') : t('Добавить ученика')}
         </button>

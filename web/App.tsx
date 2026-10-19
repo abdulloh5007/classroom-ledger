@@ -29,13 +29,15 @@ import { FloatingControls } from './FloatingControls';
 import { PaymentFilter, type PaymentStatus } from './PaymentFilter';
 import { revealTheme } from './theme';
 import { Courses, CourseForm, DeleteCourse } from './Courses';
+import { GroupForm, GroupSwitcher } from './Groups';
 
 type Modal =
   | { type: 'payment'; studentId?: number }
   | { type: 'student'; student?: Student }
   | { type: 'history' | 'delete'; student: Student }
   | { type: 'course'; course?: Course }
-  | { type: 'deleteCourse'; course: Course };
+  | { type: 'deleteCourse'; course: Course }
+  | { type: 'group' | 'switchGroup' };
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -58,7 +60,6 @@ function initialTheme(): string {
   }
 }
 export function App({
-  onLogout,
   loggingOut = false,
 }: {
   onLogout?: () => Promise<void>;
@@ -71,6 +72,10 @@ export function App({
   const [tab, setTab] = useState<'debtors' | 'students' | 'courses'>('debtors');
   const {
     students,
+    groups,
+    group,
+    selectGroup,
+    registerGroup,
     courses,
     months,
     loading: monthLoading,
@@ -97,12 +102,14 @@ export function App({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [openingHistory, setOpeningHistory] = useState<number>();
   const historyRequest = useRef(0);
-  function showModal(value: Modal) {
+  const showModal = useCallback((value: Modal) => {
     historyRequest.current++;
     setOpeningHistory(undefined);
     setModal(value);
     setSheetOpen(true);
-  }
+  }, []);
+  const createGroup = useCallback(() => showModal({ type: 'group' }), [showModal]);
+  const switchGroup = useCallback(() => showModal({ type: 'switchGroup' }), [showModal]);
   async function openHistory(student: Student) {
     const request = ++historyRequest.current;
     setOpeningHistory(student.id);
@@ -184,22 +191,29 @@ export function App({
   const filtered = students.filter((student) => matchesStudent(student, query));
   const modalTitle = !modal
     ? ''
-    : modal.type === 'course'
-      ? t(modal.course ? 'Редактировать курс' : 'Новый курс')
-      : modal.type === 'deleteCourse'
-        ? t('Удалить курс?')
-        : modal.type === 'payment'
-          ? t('Внести оплату')
-          : modal.type === 'student'
-            ? modal.student
-              ? t('Редактировать ученика')
-              : t('Новый ученик')
-            : modal.type === 'delete'
-              ? t('Удалить ученика?')
-              : t('История оплат');
+    : modal.type === 'group'
+      ? t('Создать группу')
+      : modal.type === 'switchGroup'
+        ? t('Сменить группу')
+        : modal.type === 'course'
+          ? t(modal.course ? 'Редактировать курс' : 'Новый курс')
+          : modal.type === 'deleteCourse'
+            ? t('Удалить курс?')
+            : modal.type === 'payment'
+              ? t('Внести оплату')
+              : modal.type === 'student'
+                ? modal.student
+                  ? t('Редактировать ученика')
+                  : t('Новый ученик')
+                : modal.type === 'delete'
+                  ? t('Удалить ученика?')
+                  : t('История оплат');
   const modalDescription = !modal
     ? ''
-    : modal.type === 'course' || modal.type === 'deleteCourse'
+    : modal.type === 'group' ||
+        modal.type === 'switchGroup' ||
+        modal.type === 'course' ||
+        modal.type === 'deleteCourse'
       ? ''
       : modal.type === 'payment'
         ? ''
@@ -209,7 +223,7 @@ export function App({
             ? modal.student.name
             : t('Это действие нельзя отменить');
   return (
-    <div className="app-shell wallet-shell">
+    <div className="app-shell wallet-shell" aria-busy={loggingOut || undefined}>
       <a className="skip-link" href="#content">
         {t('Перейти к содержимому')}{' '}
       </a>
@@ -222,8 +236,16 @@ export function App({
           totalStudents={students.length}
           ready={ready}
           onMonthChange={selectMonth}
-          onLogout={onLogout}
-          loggingOut={loggingOut}
+          groupName={
+            group
+              ? group.name === group.courseName
+                ? group.name
+                : `${group.name} · ${group.courseName}`
+              : ''
+          }
+          onCreateGroup={createGroup}
+          onSwitchGroup={switchGroup}
+          canSwitchGroup={groups.length > 0}
         />
         <div className="wallet-tabs">
           <div className="segment-control" role="tablist" aria-label={t('Раздел учёта')}>
@@ -598,9 +620,35 @@ export function App({
         {modal?.type === 'student' && (
           <StudentForm
             student={modal.student}
+            groups={groups}
+            initialGroupId={group?.id}
+            onCreateGroup={createGroup}
+            onSaved={(text, id) => {
+              if (id) selectGroup(id);
+              saved(text);
+            }}
+          />
+        )}
+        {modal?.type === 'group' && (
+          <GroupForm
             courses={courses}
+            onCreated={(created) => {
+              registerGroup(created);
+              setQuery('');
+              saved(t('Группа создана'));
+            }}
             onCreateCourse={() => showModal({ type: 'course' })}
-            onSaved={saved}
+          />
+        )}
+        {modal?.type === 'switchGroup' && (
+          <GroupSwitcher
+            groups={groups}
+            activeId={group?.id}
+            onSelect={(id) => {
+              selectGroup(id);
+              setQuery('');
+              close();
+            }}
           />
         )}
         {modal?.type === 'course' && <CourseForm course={modal.course} onSaved={saved} />}

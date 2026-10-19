@@ -1,11 +1,36 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Course, Debtor, Student } from '../src/contracts';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Course, Debtor, Group, Student } from '../src/contracts';
 import { currentMonth, shiftMonth } from '../src/calendar';
 import { api } from './api';
 
+function initialGroup(): number | undefined {
+  try {
+    const value = Number(localStorage.getItem('ledger-group'));
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
 export function useLedger(month: string) {
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState(initialGroup);
+  const selectGroup = useCallback((id: number) => {
+    setSelectedGroupId(id);
+    try {
+      localStorage.setItem('ledger-group', String(id));
+    } catch {
+      /* Selection works without storage. */
+    }
+  }, []);
+  const registerGroup = useCallback(
+    (group: Group) => {
+      setGroups((rows) => [...rows.filter((row) => row.id !== group.id), group]);
+      selectGroup(group.id);
+    },
+    [selectGroup],
+  );
   const [courses, setCourses] = useState<Course[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
+  const [allStudents, setStudents] = useState<Student[]>([]);
   const [studentsReady, setStudentsReady] = useState(false);
   const [months, setMonths] = useState<Record<string, Debtor[]>>({});
   const [studentsError, setStudentsError] = useState('');
@@ -51,11 +76,13 @@ export function useLedger(month: string) {
     void Promise.all([
       api<Student[]>('/students', { signal: controller.signal }),
       api<Course[]>('/courses', { signal: controller.signal }),
+      api<Group[]>('/groups', { signal: controller.signal }),
     ])
-      .then(([rows, courses]) => {
+      .then(([rows, courses, groups]) => {
         if (!controller.signal.aborted) {
           setStudents(rows);
           setCourses(courses);
+          setGroups(groups);
           setStudentsReady(true);
         }
       })
@@ -110,10 +137,28 @@ export function useLedger(month: string) {
     setStudentsReady(false);
     setRevision((value) => value + 1);
   }, []);
+  const group = groups.find((row) => row.id === selectedGroupId) ?? groups[0];
+  const students = useMemo(
+    () => allStudents.filter((student) => student.groupId === group?.id),
+    [allStudents, group?.id],
+  );
+  const scopedMonths = useMemo(() => {
+    const ids = new Set(students.map((student) => student.id));
+    return Object.fromEntries(
+      Object.entries(months).map(([key, rows]) => [
+        key,
+        rows.filter((row) => ids.has(row.studentId)),
+      ]),
+    );
+  }, [months, students]);
   return {
+    groups,
+    group,
+    selectGroup,
+    registerGroup,
     students,
     courses,
-    months,
+    months: scopedMonths,
     studentsError,
     monthError,
     reload,

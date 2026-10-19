@@ -1,10 +1,10 @@
 import { useI18n } from './i18n';
 import { memo, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { LogOut } from 'lucide-react';
 import type { Debtor } from '../src/contracts';
 import { currentMonth, shiftMonth } from '../src/calendar';
 import { MonthPicker } from './MonthPicker';
+import { GroupMenu } from './GroupMenu';
 
 export const WalletHero = memo(function WalletHero({
   month,
@@ -13,8 +13,10 @@ export const WalletHero = memo(function WalletHero({
   totalStudents,
   ready,
   onMonthChange,
-  onLogout,
-  loggingOut,
+  groupName,
+  onCreateGroup,
+  onSwitchGroup,
+  canSwitchGroup,
 }: {
   month: string;
   direction: number;
@@ -22,8 +24,10 @@ export const WalletHero = memo(function WalletHero({
   totalStudents: number;
   ready: boolean;
   onMonthChange: (month: string) => void;
-  onLogout?: () => Promise<void>;
-  loggingOut: boolean;
+  groupName: string;
+  onCreateGroup: () => void;
+  onSwitchGroup: () => void;
+  canSwitchGroup: boolean;
 }) {
   const { t, monthLabel, language, setLanguage } = useI18n();
 
@@ -74,16 +78,12 @@ export const WalletHero = memo(function WalletHero({
         }
       }}
     >
-      {onLogout && (
-        <button
-          className="icon-button wallet-logout"
-          aria-label={t('Выйти')}
-          disabled={loggingOut}
-          onClick={() => void onLogout()}
-        >
-          <LogOut size={17} />
-        </button>
-      )}
+      <GroupMenu
+        onCreate={onCreateGroup}
+        onSwitch={onSwitchGroup}
+        ready={ready}
+        canSwitch={canSwitchGroup}
+      />
       <button
         className="icon-button wallet-language"
         aria-label={t('Язык интерфейса')}
@@ -92,6 +92,9 @@ export const WalletHero = memo(function WalletHero({
         {language === 'ru' ? 'UZ' : 'RU'}
       </button>
       <MonthPicker month={month} direction={direction} onChange={onMonthChange} />
+      <p className="wallet-group-name" title={groupName}>
+        {ready ? groupName || t('Нет групп') : t('Загрузка…')}
+      </p>
       <div className="wallet-balance-area">
         <motion.div
           ref={carousel}

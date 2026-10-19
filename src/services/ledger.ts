@@ -10,6 +10,8 @@ import {
   studentPatchSchema,
   courseSchema,
   coursePatchSchema,
+  groupSchema,
+  type Group,
   type Course,
   type Student,
   type Payment,
@@ -21,7 +23,7 @@ import { monthRange, currentMonth } from '../calendar.js';
 import { AppError } from '../errors.js';
 
 const studentColumns =
-  'id, name, phone, group_name AS "group", monthly_amount AS monthlyAmount, course_id AS courseId, created_at AS createdAt';
+  'id, name, phone, group_name AS "group", monthly_amount AS monthlyAmount, course_id AS courseId, group_id AS groupId, created_at AS createdAt';
 const paymentColumns =
   'id, student_id AS studentId, amount, paid_at AS date, created_at AS createdAt';
 export class LedgerService {
@@ -29,10 +31,13 @@ export class LedgerService {
     public readonly db: Database.Database,
     public readonly ownerId?: number,
   ) {}
-  students(): Student[] {
+  students(rawGroupId?: unknown): Student[] {
+    const groupId = rawGroupId === undefined ? undefined : this.group(rawGroupId).id;
     return this.db
-      .prepare(`SELECT ${studentColumns} FROM students ORDER BY name COLLATE NOCASE, id`)
-      .all() as Student[];
+      .prepare(
+        `SELECT ${studentColumns} FROM students WHERE (? IS NULL OR group_id=?) ORDER BY name COLLATE NOCASE, id`,
+      )
+      .all(groupId ?? null, groupId ?? null) as Student[];
   }
   student(rawId: unknown): Student {
     const id = idSchema.parse(rawId);
@@ -45,7 +50,7 @@ export class LedgerService {
   courses(): Course[] {
     return this.db
       .prepare(
-        `SELECT c.id, c.name, c.monthly_amount AS monthlyAmount, c.created_at AS createdAt, COUNT(s.id) AS studentCount FROM courses c LEFT JOIN students s ON s.course_id=c.id GROUP BY c.id ORDER BY c.name COLLATE NOCASE, c.id`,
+        `SELECT c.id, c.name, c.monthly_amount AS monthlyAmount, c.created_at AS createdAt, (SELECT COUNT(*) FROM student_groups WHERE course_id=c.id) AS groupCount, COUNT(s.id) AS studentCount FROM courses c LEFT JOIN students s ON s.course_id=c.id GROUP BY c.id ORDER BY c.name COLLATE NOCASE, c.id`,
       )
       .all() as Course[];
   }
@@ -53,7 +58,7 @@ export class LedgerService {
     const id = idSchema.parse(rawId);
     const course = this.db
       .prepare(
-        `SELECT c.id, c.name, c.monthly_amount AS monthlyAmount, c.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE course_id=c.id) AS studentCount FROM courses c WHERE c.id=?`,
+        `SELECT c.id, c.name, c.monthly_amount AS monthlyAmount, c.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE course_id=c.id) AS studentCount, (SELECT COUNT(*) FROM student_groups WHERE course_id=c.id) AS groupCount FROM courses c WHERE c.id=?`,
       )
       .get(id) as Course | undefined;
     if (!course) throw new AppError(404, 'Курс не найден');
@@ -100,6 +105,7 @@ export class LedgerService {
       .transaction(() => {
         const course = this.course(rawId);
         if (course.studentCount) throw new AppError(409, 'Нельзя удалить курс с учениками');
+        if (course.groupCount) throw new AppError(409, 'Нельзя удалить курс с группами');
         this.db.prepare('DELETE FROM courses WHERE id=?').run(course.id);
       })
       .immediate();
@@ -110,19 +116,62 @@ export class LedgerService {
       .get(name, amount) as { id: number } | undefined;
     return existing ? this.course(existing.id) : this.createCourse({ name, monthlyAmount: amount });
   }
+  groups(): Group[] {
+    return this.db
+      .prepare(
+        `SELECT g.id, g.name, g.course_id AS courseId, c.name AS courseName, c.monthly_amount AS monthlyAmount, g.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE group_id=g.id) AS studentCount FROM student_groups g JOIN courses c ON c.id=g.course_id ORDER BY g.id`,
+      )
+      .all() as Group[];
+  }
+  group(rawId: unknown): Group {
+    const id = idSchema.parse(rawId);
+    const group = this.db
+      .prepare(
+        `SELECT g.id, g.name, g.course_id AS courseId, c.name AS courseName, c.monthly_amount AS monthlyAmount, g.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE group_id=g.id) AS studentCount FROM student_groups g JOIN courses c ON c.id=g.course_id WHERE g.id=?`,
+      )
+      .get(id) as Group | undefined;
+    if (!group) throw new AppError(404, 'Группа не найдена');
+    return group;
+  }
+  createGroup(input: unknown): Group {
+    const data = groupSchema.parse(input);
+    return this.db
+      .transaction(() => {
+        this.course(data.courseId);
+        if (
+          this.db
+            .prepare('SELECT id FROM student_groups WHERE name=? AND course_id=?')
+            .get(data.name, data.courseId)
+        )
+          throw new AppError(409, 'Такая группа уже существует');
+        const result = this.db
+          .prepare('INSERT INTO student_groups(name, course_id) VALUES (?, ?)')
+          .run(data.name, data.courseId);
+        return this.group(Number(result.lastInsertRowid));
+      })
+      .immediate();
+  }
+  private defaultGroup(name: string, courseId: number): Group {
+    const existing = this.db
+      .prepare('SELECT id FROM student_groups WHERE name=? AND course_id=?')
+      .get(name, courseId) as { id: number } | undefined;
+    return existing ? this.group(existing.id) : this.createGroup({ name, courseId });
+  }
   createStudent(input: unknown): Student {
     const data = studentSchema.parse(input);
     return this.db
       .transaction(() => {
-        const course =
-          'courseId' in data
-            ? this.course(data.courseId)
-            : this.legacyCourse(data.group, data.monthlyAmount);
+        const group =
+          'groupId' in data
+            ? this.group(data.groupId)
+            : 'courseId' in data
+              ? this.defaultGroup(this.course(data.courseId).name, data.courseId)
+              : this.defaultGroup(data.group, this.legacyCourse(data.group, data.monthlyAmount).id);
         const result = this.db
           .prepare(
-            'INSERT INTO students(name, phone, group_name, monthly_amount, course_id) VALUES (?, ?, ?, ?, ?)',
+            'INSERT INTO students(name, phone, group_name, monthly_amount, course_id, group_id) VALUES (?, ?, ?, ?, ?, ?)',
           )
-          .run(data.name, data.phone, course.name, course.monthlyAmount, course.id);
+          .run(data.name, data.phone, group.name, group.monthlyAmount, group.courseId, group.id);
         return this.student(Number(result.lastInsertRowid));
       })
       .immediate();
@@ -132,25 +181,33 @@ export class LedgerService {
     return this.db
       .transaction(() => {
         const existing = this.student(id);
-        const course =
-          'courseId' in patch && patch.courseId !== undefined
-            ? this.course(patch.courseId)
-            : this.legacyCourse(
-                'group' in patch && patch.group !== undefined ? patch.group : existing.group,
-                'monthlyAmount' in patch && patch.monthlyAmount !== undefined
-                  ? patch.monthlyAmount
-                  : existing.monthlyAmount,
-              );
+        const group =
+          'groupId' in patch && patch.groupId !== undefined
+            ? this.group(patch.groupId)
+            : 'courseId' in patch && patch.courseId !== undefined
+              ? this.defaultGroup(this.course(patch.courseId).name, patch.courseId)
+              : 'group' in patch || 'monthlyAmount' in patch
+                ? this.defaultGroup(
+                    'group' in patch && patch.group !== undefined ? patch.group : existing.group,
+                    this.legacyCourse(
+                      'group' in patch && patch.group !== undefined ? patch.group : existing.group,
+                      'monthlyAmount' in patch && patch.monthlyAmount !== undefined
+                        ? patch.monthlyAmount
+                        : existing.monthlyAmount,
+                    ).id,
+                  )
+                : this.group(existing.groupId);
         this.db
           .prepare(
-            'UPDATE students SET name=?, phone=?, group_name=?, monthly_amount=?, course_id=? WHERE id=?',
+            'UPDATE students SET name=?, phone=?, group_name=?, monthly_amount=?, course_id=?, group_id=? WHERE id=?',
           )
           .run(
             patch.name ?? existing.name,
             patch.phone ?? existing.phone,
-            course.name,
-            course.monthlyAmount,
-            course.id,
+            group.name,
+            group.monthlyAmount,
+            group.courseId,
+            group.id,
             existing.id,
           );
         return this.student(existing.id);
@@ -262,10 +319,11 @@ export class LedgerService {
     this.assertSafe(paid);
     return { paid, debt: Math.max(0, student.monthlyAmount - paid) };
   }
-  debtors(month = currentMonth()): Debtor[] {
-    return this.monthlyBalances(month).filter((row) => row.debt > 0);
+  debtors(month = currentMonth(), groupId?: unknown): Debtor[] {
+    return this.monthlyBalances(month, groupId).filter((row) => row.debt > 0);
   }
-  monthlyBalances(month = currentMonth()): Debtor[] {
+  monthlyBalances(month = currentMonth(), rawGroupId?: unknown): Debtor[] {
+    const groupId = rawGroupId === undefined ? undefined : this.group(rawGroupId).id;
     const { start, end } = monthRange(month);
     const rows = this.db
       .prepare(
@@ -273,10 +331,10 @@ export class LedgerService {
       SELECT s.id AS studentId, s.name, s.phone, s.group_name AS "group", s.monthly_amount AS monthlyAmount,
         COALESCE(SUM(p.amount), 0) AS paid, MAX(0, s.monthly_amount - COALESCE(SUM(p.amount), 0)) AS debt
       FROM students s LEFT JOIN payments p ON p.student_id=s.id AND p.paid_at>=? AND p.paid_at<?
-      GROUP BY s.id ORDER BY debt DESC, s.name, s.id
+      WHERE (? IS NULL OR s.group_id=?) GROUP BY s.id ORDER BY debt DESC, s.name, s.id
     `,
       )
-      .all(start, end) as Debtor[];
+      .all(start, end, groupId ?? null, groupId ?? null) as Debtor[];
     for (const row of rows) this.assertSafe(row.paid);
     this.assertSafe(rows.reduce((sum, row) => sum + row.debt, 0));
     return rows;

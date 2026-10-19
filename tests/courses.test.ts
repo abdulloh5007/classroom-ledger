@@ -40,14 +40,16 @@ it('обновляет цену/название всем ученикам и н
   const student = service.createStudent({ name: 'Test', phone: '+998901234567', courseId: a.id });
   service.updateCourse(a.id, { name: 'English A2', monthlyAmount: 1000000 });
   expect(service.student(student.id)).toMatchObject({
-    group: 'English A2',
+    group: 'English',
     monthlyAmount: 1000000,
   });
   expect(() => service.deleteCourse(a.id)).toThrow('Нельзя удалить курс с учениками');
   service.updateStudent(student.id, { courseId: b.id });
   expect(service.student(student.id)).toMatchObject({ courseId: b.id, monthlyAmount: 1200000 });
-  service.deleteCourse(a.id);
-  expect(service.courses()).toHaveLength(1);
+  expect(() => service.deleteCourse(a.id)).toThrow('Нельзя удалить курс с группами');
+  const unused = service.createCourse({ name: 'Empty', monthlyAmount: 1000 });
+  service.deleteCourse(unused.id);
+  expect(service.courses()).toHaveLength(2);
   expect(() => service.createCourse({ name: 'Python', monthlyAmount: 1200000 })).toThrow(
     'Такой курс уже существует',
   );
@@ -114,7 +116,7 @@ it('мигрирует старые группы/тарифы и сохраня�
     });
     old.addPayment(first.id, { amount: 400, date: '2026-10-01' });
     file.exec(
-      'DROP TRIGGER course_student_tariff; DROP INDEX students_course; ALTER TABLE students DROP COLUMN course_id; DROP TABLE courses; PRAGMA user_version=3;',
+      'DROP TRIGGER group_student_match_insert; DROP TRIGGER group_student_match_update; DROP TRIGGER group_student_name; DROP TRIGGER group_course_immutable; DROP INDEX students_group; ALTER TABLE students DROP COLUMN group_id; DROP TABLE student_groups; DROP TRIGGER course_student_tariff; DROP INDEX students_course; ALTER TABLE students DROP COLUMN course_id; DROP TABLE courses; PRAGMA user_version=3;',
     );
     file.close();
     file = openDatabase(path);

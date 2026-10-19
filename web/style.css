@@ -1339,13 +1339,6 @@ html {
   position: relative;
   isolation: isolate;
 }
-.wallet-logout {
-  position: absolute;
-  top: calc(18px + env(safe-area-inset-top));
-  left: 14px;
-  color: var(--muted);
-  z-index: 2;
-}
 .wallet-month {
   display: inline-flex;
   align-items: center;
@@ -1597,10 +1590,6 @@ html {
     border-radius: 36px;
     padding-top: 22px;
   }
-  .wallet-logout {
-    top: 22px;
-    left: 22px;
-  }
   .wallet-content {
     padding: 24px 8px 0;
   }
@@ -1823,4 +1812,85 @@ html.theme-revealing::view-transition-old(root) {
 
 .payment-balance .progress > span {
   transition: width 220ms var(--curve);
+}
+
+.wallet-more {
+  position: absolute;
+  top: calc(18px + env(safe-area-inset-top));
+  right: 14px;
+  z-index: 2;
+  color: var(--ink);
+  background: transparent;
+}
+.wallet-hero .wallet-language {
+  left: 14px;
+  right: auto;
+}
+.wallet-more:hover,
+.wallet-more[data-state='open'],
+.wallet-hero .wallet-language:hover {
+  background: #06283c10;
+}
+.wallet-group-name {
+  margin: 3px auto 0;
+  max-width: calc(100% - 64px);
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-menu {
+  width: 248px;
+}
+.group-menu button {
+  min-height: 48px;
+}
+.group-menu button .group-menu-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+.group-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 84px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 16px;
+  background: transparent;
+  text-align: left;
+}
+.group-option:last-child {
+  border-bottom: 0;
+}
+.group-option:hover {
+  background: var(--hover);
+}
+.group-option[aria-checked='true'] {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+.group-option-info {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.group-option-info strong {
+  font-size: 15px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.group-option-info > span,
+.group-option-info small {
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.group-selected {
+  color: var(--accent);
+  flex-shrink: 0;
 }
