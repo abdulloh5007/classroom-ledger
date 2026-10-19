@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const idSchema = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const moneySchema = z
-  .number({ invalid_type_error: 'Введите сумму цифрами' })
+  .number({ invalid_type_error: 'Введите сумму цифрами', required_error: 'Введите сумму цифрами' })
   .int('Сумма должна быть целой')
   .min(1, 'Сумма должна быть больше нуля')
   .max(1_000_000_000_000, 'Сумма слишком большая');
@@ -35,16 +35,19 @@ const legacyStudentSchema = z
     monthlyAmount: moneySchema,
   })
   .strict();
+export const currencySchema = z.enum(['UZS', 'USD']);
+export type Currency = z.infer<typeof currencySchema>;
 export const courseSchema = z
   .object({
     name: z.string().trim().min(1, 'Введите название курса').max(80),
+    currency: currencySchema.default('UZS'),
     monthlyAmount: moneySchema,
   })
   .strict();
 export const coursePatchSchema = courseSchema
   .partial()
   .refine((value) => Object.keys(value).length > 0, 'Нет полей для изменения');
-const courseEnrollmentSchema = legacyStudentSchema.pick({ name: true, phone: true }).extend({
+export const courseEnrollmentSchema = legacyStudentSchema.pick({ name: true, phone: true }).extend({
   courseId: z.coerce.number().int().positive('Выберите курс').max(Number.MAX_SAFE_INTEGER),
 });
 export const groupSchema = z
@@ -75,6 +78,7 @@ export interface Group {
   courseId: number;
   courseName: string;
   monthlyAmount: number;
+  currency: Currency;
   studentCount: number;
   createdAt: string;
 }
@@ -82,6 +86,7 @@ export interface Course {
   id: number;
   name: string;
   monthlyAmount: number;
+  currency: Currency;
   studentCount: number;
   groupCount: number;
   createdAt: string;
@@ -92,6 +97,7 @@ export interface Student {
   phone: string;
   group: string;
   monthlyAmount: number;
+  currency: Currency;
   courseId: number;
   groupId: number;
   createdAt: string;
@@ -127,6 +133,7 @@ export interface Debtor {
   phone: string;
   group: string;
   monthlyAmount: number;
+  currency: Currency;
   paid: number;
   debt: number;
 }

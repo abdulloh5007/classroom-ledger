@@ -1,8 +1,9 @@
+import { moneyInput, parseMoneyInput } from '../src/money';
 import { useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BookOpen, Check, Pencil, Plus, Trash2 } from 'lucide-react';
-import { courseSchema, type Course } from '../src/contracts';
-import { AmountField, Empty, Spinner, Tip } from './components';
+import { courseSchema, type Course, type Currency } from '../src/contracts';
+import { AmountField, Empty, Spinner, Tip, StudentSelect } from './components';
 import { api, ApiError } from './api';
 import { useI18n } from './i18n';
 
@@ -44,7 +45,8 @@ export function Courses({
               <div className="student-info">
                 <h3>{course.name}</h3>
                 <span>
-                  {formatMoney(course.monthlyAmount)} / {t('Месяц').toLocaleLowerCase()}
+                  {formatMoney(course.monthlyAmount, course.currency)} /{' '}
+                  {t('Месяц').toLocaleLowerCase()}
                 </span>
                 <small>
                   {t('Ученики')}: {course.studentCount}
@@ -104,14 +106,21 @@ export function CourseForm({
 }) {
   const { t } = useI18n();
   const [name, setName] = useState(course?.name ?? '');
-  const [amount, setAmount] = useState(course ? String(course.monthlyAmount) : '');
+  const [currency, setCurrency] = useState<Currency>(course?.currency ?? 'UZS');
+  const [amount, setAmount] = useState(
+    course ? moneyInput(course.monthlyAmount, course.currency) : '',
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const parsed = courseSchema.safeParse({ name, monthlyAmount: Number(amount) });
+    const parsed = courseSchema.safeParse({
+      name,
+      currency,
+      monthlyAmount: parseMoneyInput(amount, currency),
+    });
     if (!parsed.success) {
       setErrors(parsed.error.flatten().fieldErrors);
       return;
@@ -156,7 +165,26 @@ export function CourseForm({
             </span>
           )}
         </label>
+        <div className="field">
+          <StudentSelect
+            id="course-currency"
+            label={t('Валюта курса')}
+            value={currency}
+            disabled={Boolean(course?.studentCount)}
+            onChange={(value) => {
+              setCurrency(value as Currency);
+              setAmount('');
+              setErrors({});
+            }}
+            options={[
+              { value: 'UZS', label: `UZS · ${t('сум')}` },
+              { value: 'USD', label: 'USD · $' },
+            ]}
+            error={errors.currency?.[0]}
+          />
+        </div>
         <AmountField
+          currency={currency}
           id="course-amount"
           label={t('Оплата в месяц')}
           value={amount}

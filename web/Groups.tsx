@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import { Check, Plus, Users } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
 import { groupSchema, type Course, type Group } from '../src/contracts';
 import { api, ApiError } from './api';
-import { Empty, Spinner, StudentSelect } from './components';
+import { Spinner, StudentSelect } from './components';
 import { useI18n } from './i18n';
 
 export function GroupForm({
@@ -80,7 +80,7 @@ export function GroupForm({
             }}
             options={courses.map((course) => ({
               value: String(course.id),
-              label: `${course.name} · ${formatMoney(course.monthlyAmount)}`,
+              label: `${course.name} · ${formatMoney(course.monthlyAmount, course.currency)}`,
             }))}
             error={errors.courseId?.[0]}
           />
@@ -103,69 +103,5 @@ export function GroupForm({
         </button>
       </fieldset>
     </form>
-  );
-}
-export function GroupSwitcher({
-  groups,
-  activeId,
-  onSelect,
-}: {
-  groups: Group[];
-  activeId?: number;
-  onSelect: (id: number) => void;
-}) {
-  const { t, formatMoney } = useI18n();
-  return groups.length ? (
-    <div
-      className="inset-list group-list"
-      role="radiogroup"
-      aria-label={t('Сменить группу')}
-      onKeyDown={(event) => {
-        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-        event.preventDefault();
-        const buttons = [
-          ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
-        ];
-        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-        buttons[
-          event.key === 'Home'
-            ? 0
-            : event.key === 'End'
-              ? buttons.length - 1
-              : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
-        ]?.focus();
-      }}
-    >
-      {groups.map((group) => (
-        <button
-          key={group.id}
-          className="group-option"
-          role="radio"
-          aria-checked={group.id === activeId}
-          tabIndex={group.id === activeId ? 0 : -1}
-          onClick={() => onSelect(group.id)}
-        >
-          <span className="avatar">
-            <Users size={19} />
-          </span>
-          <span className="group-option-info">
-            <strong>{group.name}</strong>
-            <span>
-              {group.courseName} · {formatMoney(group.monthlyAmount)}
-            </span>
-            <small>
-              {t('Ученики')}: {group.studentCount}
-            </small>
-          </span>
-          {group.id === activeId && <Check size={19} className="group-selected" />}
-        </button>
-      ))}
-    </div>
-  ) : (
-    <Empty
-      icon={<Users size={25} />}
-      title={t('Нет групп')}
-      text={t('Сначала создайте группу и выберите для неё курс.')}
-    />
   );
 }

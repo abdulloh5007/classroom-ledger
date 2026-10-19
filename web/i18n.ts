@@ -1,7 +1,15 @@
+import type { Currency } from '../src/contracts';
+import { currencyUnit, moneyNumber } from '../src/money';
 import { useSyncExternalStore } from 'react';
 
 export type Language = 'ru' | 'uz';
 const uz: Record<string, string> = {
+  'Валюта курса': 'Kurs valyutasi',
+  Создать: 'Yaratish',
+  'Нельзя менять валюту курса с учениками':
+    'O‘quvchilari bor kurs valyutasini o‘zgartirib bo‘lmaydi',
+  'Нельзя переводить ученика с оплатами на курс в другой валюте':
+    'To‘lovlari bor o‘quvchini boshqa valyutadagi kursga o‘tkazib bo‘lmaydi',
   'Меню группы': 'Guruh menyusi',
   'Создать группу': 'Guruh yaratish',
   'Сменить группу': 'Guruhni almashtirish',
@@ -233,8 +241,8 @@ export function t(text: string): string {
 export function locale(): string {
   return language === 'uz' ? 'uz-Latn-UZ' : 'ru-RU';
 }
-export function money(amount: number): string {
-  return `${new Intl.NumberFormat('ru-RU').format(amount).replace(/[\u00a0\u202f]/g, ' ')} ${t('сум')}`;
+export function money(amount: number, currency: Currency = 'UZS'): string {
+  return `${moneyNumber(amount, currency)} ${t(currencyUnit(currency))}`;
 }
 export function localizedMonth(month: string): string {
   return new Intl.DateTimeFormat(locale(), { month: 'long', year: 'numeric', timeZone: 'UTC' })

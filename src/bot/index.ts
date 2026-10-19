@@ -121,7 +121,7 @@ export function createBot(token: string, service: LedgerService) {
       .slice(page * 4, page * 4 + 4)
       .map(
         (row) =>
-          `<b>${short(row.name, 50)}</b> · <code>#${row.studentId}</code>\n${short(row.group, 30)} · оплачено <code>${formatMoney(row.paid)}</code>\nДолг: <code>${formatMoney(row.debt)}</code>`,
+          `<b>${short(row.name, 50)}</b> · <code>#${row.studentId}</code>\n${short(row.group, 30)} · оплачено <code>${formatMoney(row.paid, row.currency)}</code>\nДолг: <code>${formatMoney(row.debt, row.currency)}</code>`,
       )
       .join('\n\n');
     const keyboard = new InlineKeyboard();
@@ -132,8 +132,17 @@ export function createBot(token: string, service: LedgerService) {
       if (page > 0) keyboard.text('↑ Назад', `debt:${month}:${page - 1}`);
       if (page < pages - 1) keyboard.text('Ещё ↓', `debt:${month}:${page + 1}`);
     }
+    const totals =
+      [...new Set(rows.map((row) => row.currency))]
+        .map((currency) =>
+          formatMoney(
+            rows.filter((row) => row.currency === currency).reduce((sum, row) => sum + row.debt, 0),
+            currency,
+          ),
+        )
+        .join(' + ') || formatMoney(0);
     return {
-      text: `<b>Задолженность · ${month}</b>\n\n${entries ? `<blockquote expandable>${entries}</blockquote>` : '✓ Все оплаты внесены. Должников нет.'}\n\nИтого: <code>${formatMoney(rows.reduce((sum, row) => sum + row.debt, 0))}</code>\nУчеников: ${rows.length} · Страница ${page + 1}/${pages}`,
+      text: `<b>Задолженность · ${month}</b>\n\n${entries ? `<blockquote expandable>${entries}</blockquote>` : '✓ Все оплаты внесены. Должников нет.'}\n\nИтого: <code>${totals}</code>\nУчеников: ${rows.length} · Страница ${page + 1}/${pages}`,
       reply_markup: keyboard,
     };
   }
@@ -168,7 +177,7 @@ export function createBot(token: string, service: LedgerService) {
     const list = selected
       .map(
         (student) =>
-          `<code>#${student.id}</code> <b>${short(student.name)}</b>\n${short(student.group, 35)} · <code>${formatMoney(student.monthlyAmount)}</code>`,
+          `<code>#${student.id}</code> <b>${short(student.name)}</b>\n${short(student.group, 35)} · <code>${formatMoney(student.monthlyAmount, student.currency)}</code>`,
       )
       .join('\n\n');
     return {
@@ -193,19 +202,24 @@ export function createBot(token: string, service: LedgerService) {
     const { debt } = service.balance(student.id, payment.date.slice(0, 7));
     if (ctx.from) pending.delete(ctx.from!.id);
     await ctx.reply(
-      `<b>✓ Оплата внесена</b>\n\n<blockquote><b>${short(student.name)}</b>\nID: <code>${student.id}</code>\nСумма: <code>${formatMoney(payment.amount)}</code>\nДата: <code>${payment.date}</code>\nОстаток долга: <code>${formatMoney(debt)}</code></blockquote>`,
+      `<b>✓ Оплата внесена</b>\n\n<blockquote><b>${short(student.name)}</b>\nID: <code>${student.id}</code>\nСумма: <code>${formatMoney(payment.amount, student.currency)}</code>\nДата: <code>${payment.date}</code>\nОстаток долга: <code>${formatMoney(debt, student.currency)}</code></blockquote>`,
       { ...htmlOptions, reply_markup: { remove_keyboard: true } },
     );
   }
   bot.command('pay', async (ctx) => {
     pending.delete(ctx.from!.id);
     if (ctx.match.trim()) {
-      const match = /^(\d+)\s+([\d \u00a0\u202f]+)$/.exec(ctx.match.trim());
+      const match = /^(\d+)\s+([\d., \u00a0\u202f]+)$/.exec(ctx.match.trim());
       if (!match) {
         await ctx.reply('Формат: /pay 12 250000. Для выбора кнопками отправьте /pay.');
         return;
       }
-      await pay(ctx, Number(match[1]), parseAmount(match[2]!), `update:${ctx.update.update_id}`);
+      await pay(
+        ctx,
+        Number(match[1]),
+        parseAmount(match[2]!, service.student(Number(match[1])).currency),
+        `update:${ctx.update.update_id}`,
+      );
       return;
     }
     const page = studentsPage(0, true);
@@ -225,12 +239,17 @@ export function createBot(token: string, service: LedgerService) {
     });
     const keyboard = new InlineKeyboard();
     for (const amount of new Set(
-      [debt, student.monthlyAmount, 100000, 250000].filter((value) => value > 0),
+      [debt, ...(student.currency === 'USD' ? [1000, 2500] : [100000, 250000])].filter(
+        (value) => value > 0 && value <= debt,
+      ),
     ))
-      keyboard.text(formatMoney(amount), `pay:${token}:${amount}`).success().row();
+      keyboard
+        .text(formatMoney(amount, student.currency), `pay:${token}:${amount}`)
+        .success()
+        .row();
     keyboard.text('✎ Ввести вручную', `manual:${token}`).primary();
     await ctx.editMessageText(
-      `<b>${short(student.name)}</b>\nДолг за ${currentMonth()}: <code>${formatMoney(debt)}</code>\n\nВыберите сумму — нажатие сразу внесёт оплату.`,
+      `<b>${short(student.name)}</b>\nДолг за ${currentMonth()}: <code>${formatMoney(debt, student.currency)}</code>\n\nВыберите сумму — нажатие сразу внесёт оплату.`,
       { ...htmlOptions, reply_markup: keyboard },
     );
   });
@@ -246,10 +265,14 @@ export function createBot(token: string, service: LedgerService) {
     await ctx.answerCallbackQuery();
     if (ctx.match[1] === 'manual') {
       pending.set(ctx.from!.id, { ...intent, manual: true });
-      await ctx.reply('Введите целую сумму в сумах, например 250 000. Отмена: /cancel.');
+      await ctx.reply(
+        service.student(intent.studentId).currency === 'USD'
+          ? 'Введите сумму в долларах, например 25,50. Отмена: /cancel.'
+          : 'Введите целую сумму в сумах, например 250 000. Отмена: /cancel.',
+      );
       return;
     }
-    await pay(ctx, intent.studentId, parseAmount(ctx.match[3]!), `intent:${intent.token}`);
+    await pay(ctx, intent.studentId, Number(ctx.match[3]!), `intent:${intent.token}`);
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() });
   });
 
@@ -364,7 +387,12 @@ export function createBot(token: string, service: LedgerService) {
         'Не удалось получить ID. Введите числовой ID или используйте кнопку выбора пользователя.',
       );
     } else if (intent.manual && ctx.message.text)
-      await pay(ctx, intent.studentId, parseAmount(ctx.message.text), `intent:${intent.token}`);
+      await pay(
+        ctx,
+        intent.studentId,
+        parseAmount(ctx.message.text, service.student(intent.studentId).currency),
+        `intent:${intent.token}`,
+      );
     else await ctx.reply('Выберите сумму кнопкой либо начните заново: /pay.');
   });
   bot.on('callback_query:data', async (ctx) => {

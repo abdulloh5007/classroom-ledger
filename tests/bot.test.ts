@@ -194,3 +194,30 @@ describe('Telegram handlers with mocked API transport', () => {
     expect(service.canAccess(789)).toBe(false);
   });
 });
+
+it('принимает доллары в /pay, сохраняет целые центы и разделяет итог задолженности по валютам', async () => {
+  const usd = service.createCourse({ name: 'USD', currency: 'USD', monthlyAmount: 12550 });
+  const student = service.createStudent({
+    name: 'Dollar student',
+    phone: '+998901234567',
+    courseId: usd.id,
+  });
+  service.createStudent({
+    name: 'Sum student',
+    phone: '+998901234567',
+    group: 'UZS',
+    monthlyAmount: 100000,
+  });
+  await bot.handleUpdate(message(owner, `/pay ${student.id} 25,25`));
+  expect(service.payments(student.id)[0]?.amount).toBe(2525);
+  expect(
+    String([...calls].reverse().find((call) => call.method === 'sendMessage')?.payload.text),
+  ).toContain('25,25 $');
+  await bot.handleUpdate(message(owner, '/debt'));
+  const text = String(
+    [...calls].reverse().find((call) => call.method === 'sendMessage')?.payload.text,
+  );
+  expect(text).toContain('100,25 $');
+  expect(text).toContain('100 000 сум');
+  expect(text).not.toContain('110 025');
+});

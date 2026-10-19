@@ -29,8 +29,7 @@ export function monthRange(value: string): { start: string; end: string } {
     month === 12 ? `${year! + 1}-01-01` : `${year}-${String(month! + 1).padStart(2, '0')}-01`;
   return { start: `${value}-01`, end };
 }
-export const formatMoney = (amount: number): string =>
-  `${new Intl.NumberFormat('ru-RU').format(amount).replace(/\u00a0/g, ' ')} сум`;
+export { formatCurrency as formatMoney } from './money.js';
 export const monthLabel = (month: string): string =>
   new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' })
     .format(new Date(`${month}-01T00:00:00Z`))

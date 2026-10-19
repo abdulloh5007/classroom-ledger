@@ -24,6 +24,7 @@ describe('Расчёт задолженности', () => {
     expect(service.debtors('2026-10')).toEqual([
       {
         studentId: student.id,
+        currency: 'UZS',
         name: input.name,
         phone: input.phone,
         group: input.group,

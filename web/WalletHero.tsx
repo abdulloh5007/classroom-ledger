@@ -1,7 +1,8 @@
+import { currencyUnit, moneyNumber } from '../src/money';
 import { useI18n } from './i18n';
 import { memo, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import type { Debtor } from '../src/contracts';
+import type { Currency, Group, Debtor } from '../src/contracts';
 import { currentMonth, shiftMonth } from '../src/calendar';
 import { MonthPicker } from './MonthPicker';
 import { GroupMenu } from './GroupMenu';
@@ -15,8 +16,10 @@ export const WalletHero = memo(function WalletHero({
   onMonthChange,
   groupName,
   onCreateGroup,
-  onSwitchGroup,
-  canSwitchGroup,
+  onSelectGroup,
+  groups,
+  groupId,
+  currency,
 }: {
   month: string;
   direction: number;
@@ -26,14 +29,17 @@ export const WalletHero = memo(function WalletHero({
   onMonthChange: (month: string) => void;
   groupName: string;
   onCreateGroup: () => void;
-  onSwitchGroup: () => void;
-  canSwitchGroup: boolean;
+  onSelectGroup: (id: number) => void;
+  groups: Group[];
+  groupId?: number;
+  currency: Currency;
 }) {
-  const { t, monthLabel, language, setLanguage } = useI18n();
+  const { t, monthLabel, formatMoney } = useI18n();
 
   const reduced = useReducedMotion();
   const carousel = useRef<HTMLDivElement>(null);
   const moved = useRef(false);
+  const ignorePan = useRef(false);
   const [drag, setDrag] = useState(0);
   const [dragging, setDragging] = useState(false);
   const future = month > currentMonth();
@@ -56,11 +62,16 @@ export const WalletHero = memo(function WalletHero({
       className="wallet-hero"
       aria-label={t('Сводка оплат за месяц')}
       style={{ touchAction: 'pan-y' }}
-      onPointerDownCapture={() => {
+      onPointerDownCapture={(event) => {
+        ignorePan.current =
+          event.target instanceof Element && Boolean(event.target.closest('button, [role="menu"]'));
         moved.current = false;
       }}
-      onPanStart={() => setDragging(true)}
+      onPanStart={() => {
+        if (!ignorePan.current) setDragging(true);
+      }}
       onPan={(_, info) => {
+        if (ignorePan.current) return;
         if (Math.hypot(info.offset.x, info.offset.y) > 8) moved.current = true;
         if (!reduced) setDrag(info.offset.x);
       }}
@@ -70,6 +81,7 @@ export const WalletHero = memo(function WalletHero({
         moved.current = true;
       }}
       onPanEnd={(_, info) => {
+        if (ignorePan.current) return;
         setDragging(false);
         setDrag(0);
         if (Math.abs(info.offset.x) > 45 && Math.abs(info.offset.x) > Math.abs(info.offset.y)) {
@@ -80,17 +92,11 @@ export const WalletHero = memo(function WalletHero({
     >
       <GroupMenu
         onCreate={onCreateGroup}
-        onSwitch={onSwitchGroup}
+        onSelect={onSelectGroup}
+        groups={groups}
+        activeId={groupId}
         ready={ready}
-        canSwitch={canSwitchGroup}
       />
-      <button
-        className="icon-button wallet-language"
-        aria-label={t('Язык интерфейса')}
-        onClick={() => setLanguage(language === 'ru' ? 'uz' : 'ru')}
-      >
-        {language === 'ru' ? 'UZ' : 'RU'}
-      </button>
       <MonthPicker month={month} direction={direction} onChange={onMonthChange} />
       <p className="wallet-group-name" title={groupName}>
         {ready ? groupName || t('Нет групп') : t('Загрузка…')}
@@ -111,8 +117,9 @@ export const WalletHero = memo(function WalletHero({
                 key <= currentMonth() ? months[key]?.filter((row) => row.debt > 0) : undefined;
               const amount =
                 rows && ready
-                  ? new Intl.NumberFormat('ru-RU').format(
+                  ? moneyNumber(
                       rows.reduce((sum, row) => sum + row.debt, 0),
+                      currency,
                     )
                   : '—';
               return (
@@ -147,7 +154,7 @@ export const WalletHero = memo(function WalletHero({
                       : { type: 'spring', stiffness: 290, damping: 32, mass: 0.85 }
                   }
                 >
-                  <FittedAmount amount={amount} active={offset === 0} />
+                  <FittedAmount amount={amount} active={offset === 0} currency={currency} />
                   <span
                     className="wallet-debtor-count"
                     data-testid={offset === 0 ? 'wallet-count' : undefined}
@@ -177,13 +184,24 @@ export const WalletHero = memo(function WalletHero({
           ? t('Будущий месяц: данных пока нет')
           : !months[month] || !ready
             ? t('Загрузка сводки')
-            : `${monthLabel(month)}: ${months[month]!.reduce((sum, row) => sum + row.debt, 0)} ${t('сум')}, ${t('Должники')} ${months[month]!.filter((row) => row.debt > 0).length} / ${totalStudents}`}
+            : `${monthLabel(month)}: ${formatMoney(
+                months[month]!.reduce((sum, row) => sum + row.debt, 0),
+                currency,
+              )}, ${t('Должники')} ${months[month]!.filter((row) => row.debt > 0).length} / ${totalStudents}`}
       </span>
     </motion.section>
   );
 });
 
-function FittedAmount({ amount, active }: { amount: string; active: boolean }) {
+function FittedAmount({
+  amount,
+  active,
+  currency,
+}: {
+  amount: string;
+  active: boolean;
+  currency: Currency;
+}) {
   const { t, language } = useI18n();
 
   const element = useRef<HTMLElement>(null);
@@ -210,7 +228,7 @@ function FittedAmount({ amount, active }: { amount: string; active: boolean }) {
     const observer = new ResizeObserver(fit);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [amount, language]);
+  }, [amount, language, currency]);
   return (
     <strong
       ref={element}
@@ -218,7 +236,7 @@ function FittedAmount({ amount, active }: { amount: string; active: boolean }) {
       data-testid={active ? 'wallet-amount' : undefined}
     >
       <span>{amount}</span>
-      <small>{t('сум')}</small>
+      <small>{t(currencyUnit(currency))}</small>
     </strong>
   );
 }

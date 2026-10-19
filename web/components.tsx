@@ -1,3 +1,5 @@
+import type { Currency } from '../src/contracts';
+import { currencyUnit } from '../src/money';
 import { useI18n } from './i18n';
 import { useRef, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -196,7 +198,9 @@ export function AmountField({
   max,
   onMax,
   disabled,
+  currency = 'UZS',
 }: {
+  currency?: Currency;
   id: string;
   max?: number;
   disabled?: boolean;
@@ -208,7 +212,9 @@ export function AmountField({
 }) {
   const { t } = useI18n();
 
-  const display = value.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const [whole = '', fraction] = value.split(/[.,]/);
+  const display =
+    whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + (fraction === undefined ? '' : ',' + fraction);
   return (
     <div className="field">
       <label id={`${id}-label`} htmlFor={id}>
@@ -220,12 +226,12 @@ export function AmountField({
           disabled={disabled}
           aria-labelledby={`${id}-label`}
           name={id}
-          inputMode="numeric"
+          inputMode={currency === 'USD' ? 'decimal' : 'numeric'}
           autoComplete="off"
           value={display}
           onChange={(event) => {
-            if (/^[\d\s]*$/.test(event.target.value))
-              onChange(event.target.value.replace(/\s/g, ''));
+            const next = event.target.value.replace(/\s/g, '');
+            if ((currency === 'USD' ? /^\d*(?:[.,]\d{0,2})?$/ : /^\d*$/).test(next)) onChange(next);
           }}
           required
           aria-invalid={Boolean(error)}
@@ -243,7 +249,7 @@ export function AmountField({
             MAX
           </button>
         ) : (
-          <span>{t('сум')}</span>
+          <span>{t(currencyUnit(currency))}</span>
         )}
       </div>
       {error && (

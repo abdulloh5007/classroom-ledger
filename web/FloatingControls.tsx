@@ -12,7 +12,7 @@ export function FloatingControls({
   onTheme: (button: HTMLButtonElement) => void;
   hidden: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, language, setLanguage } = useI18n();
 
   const [visible, setVisible] = useState(true);
   const [deep, setDeep] = useState(false);
@@ -60,6 +60,20 @@ export function FloatingControls({
           onClick={(event) => onTheme(event.currentTarget)}
         >
           {dark ? <Sun size={20} /> : <Moon size={20} />}
+        </motion.button>
+      )}
+      {visible && !hidden && (
+        <motion.button
+          key="language"
+          className="icon-button floating-control floating-language"
+          initial={{ y: reduced ? 0 : 128, opacity: reduced ? 0 : 1 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: reduced ? 0 : 128, opacity: reduced ? 0 : 1 }}
+          transition={transition}
+          aria-label={t('Язык интерфейса')}
+          onClick={() => setLanguage(language === 'ru' ? 'uz' : 'ru')}
+        >
+          {language === 'ru' ? 'UZ' : 'RU'}
         </motion.button>
       )}
       {visible && deep && !hidden && (

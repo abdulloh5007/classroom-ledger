@@ -1,7 +1,14 @@
+import { moneyInput, parseMoneyInput } from '../src/money';
 import { useI18n } from './i18n';
 import { useEffect, useState, type FormEvent, type Dispatch, type SetStateAction } from 'react';
 import { ArrowDownLeft, Check, Trash2 } from 'lucide-react';
-import { paymentSchema, studentEnrollmentSchema, type Student, type Group } from '../src/contracts';
+import {
+  paymentSchema,
+  courseEnrollmentSchema,
+  type Student,
+  type Group,
+  type Course,
+} from '../src/contracts';
 import { today } from '../src/calendar';
 import { api, ApiError } from './api';
 import { AmountField, Spinner, StudentSelect } from './components';
@@ -65,8 +72,10 @@ export function PaymentForm({
       });
     return () => controller.abort();
   }, [studentId, month, attempt, t]);
-  const projectedPaid = (currentBalance?.paid ?? 0) + Number(amount);
-  const projectedDebt = Math.max(0, (currentBalance?.debt ?? 0) - Number(amount));
+  const currency = students.find((student) => String(student.id) === studentId)?.currency ?? 'UZS';
+  const numericAmount = parseMoneyInput(amount, currency) ?? 0;
+  const projectedPaid = (currentBalance?.paid ?? 0) + numericAmount;
+  const projectedDebt = Math.max(0, (currentBalance?.debt ?? 0) - numericAmount);
   const percentage = currentBalance
     ? Math.min(
         100,
@@ -76,7 +85,7 @@ export function PaymentForm({
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    if (!currentBalance || Number(amount) > currentBalance.debt) {
+    if (!currentBalance || numericAmount > currentBalance.debt) {
       setErrors({
         amount: [
           currentBalance
@@ -86,7 +95,7 @@ export function PaymentForm({
       });
       return;
     }
-    const parsed = paymentSchema.safeParse({ amount: Number(amount), date });
+    const parsed = paymentSchema.safeParse({ amount: parseMoneyInput(amount, currency), date });
     if (!parsed.success || !studentId) {
       setErrors({
         ...(!parsed.success ? parsed.error.flatten().fieldErrors : {}),
@@ -134,18 +143,19 @@ export function PaymentForm({
         </div>
         <AmountField
           id="payment-amount"
+          currency={currency}
           label={t('Сумма оплаты')}
           value={amount}
           max={currentBalance?.debt}
           disabled={!currentBalance}
           onMax={() => {
             if (currentBalance) {
-              setAmount(String(currentBalance.debt));
+              setAmount(moneyInput(currentBalance.debt, currency));
               clearField(setErrors, 'amount');
             }
           }}
           onChange={(value) => {
-            if (currentBalance && Number(value) > currentBalance.debt) {
+            if (currentBalance && (parseMoneyInput(value, currency) ?? 0) > currentBalance.debt) {
               setErrors((previous) => ({
                 ...previous,
                 amount: [t('Сумма оплаты превышает остаток долга')],
@@ -178,12 +188,12 @@ export function PaymentForm({
           <div className="payment-balance" aria-live="polite">
             <div className="payment-figures">
               <div>
-                <span>{t(Number(amount) > 0 ? 'После оплаты' : 'Оплачено')}</span>
-                <strong>{formatMoney(projectedPaid)}</strong>
+                <span>{t(numericAmount > 0 ? 'После оплаты' : 'Оплачено')}</span>
+                <strong>{formatMoney(projectedPaid, currency)}</strong>
               </div>
               <div>
-                <span>{t(Number(amount) > 0 ? 'Останется' : 'Осталось')}</span>
-                <strong>{formatMoney(projectedDebt)}</strong>
+                <span>{t(numericAmount > 0 ? 'Останется' : 'Осталось')}</span>
+                <strong>{formatMoney(projectedDebt, currency)}</strong>
               </div>
             </div>
             <div
@@ -229,7 +239,7 @@ export function PaymentForm({
             !currentBalance ||
             currentBalance.debt === 0 ||
             !amount ||
-            Number(amount) > currentBalance.debt
+            numericAmount > currentBalance.debt
           }
         >
           {busy ? <Spinner /> : <Check size={18} />}
@@ -243,27 +253,32 @@ export function StudentForm({
   student,
   groups,
   initialGroupId,
-  onCreateGroup,
+  courses,
+  onCreateCourse,
   onSaved,
 }: {
   groups: Group[];
   initialGroupId?: number;
-  onCreateGroup: () => void;
+  courses: Course[];
+  onCreateCourse: () => void;
   student?: Student;
   onSaved: (text: string, groupId?: number) => void;
 }) {
-  const { t, formatMoney } = useI18n();
+  const { t } = useI18n();
 
   const [name, setName] = useState(student?.name ?? '');
   const [phone, setPhone] = useState(formatUzPhone(student?.phone ?? ''));
-  const [groupId, setGroupId] = useState(String(student?.groupId ?? initialGroupId ?? ''));
+  const initialGroup = groups.find((group) => group.id === (student?.groupId ?? initialGroupId));
+  const [courseId, setCourseId] = useState(
+    String(student?.courseId ?? initialGroup?.courseId ?? ''),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const result = studentEnrollmentSchema.safeParse({ name, phone, groupId: Number(groupId) });
+    const result = courseEnrollmentSchema.safeParse({ name, phone, courseId: Number(courseId) });
     if (uzPhoneDigits(phone).length !== 9) {
       setErrors({
         ...(!result.success ? result.error.flatten().fieldErrors : {}),
@@ -279,11 +294,18 @@ export function StudentForm({
     setError('');
     setErrors({});
     try {
-      await api(student ? `/students/${student.id}` : '/students', {
+      const matchingGroup =
+        initialGroup?.courseId === Number(courseId)
+          ? initialGroup
+          : groups.find((group) => group.courseId === Number(courseId));
+      const payload = matchingGroup
+        ? { name: result.data.name, phone: result.data.phone, groupId: matchingGroup.id }
+        : result.data;
+      const updated = await api<Student>(student ? `/students/${student.id}` : '/students', {
         method: student ? 'PATCH' : 'POST',
-        body: JSON.stringify(result.data),
+        body: JSON.stringify(payload),
       });
-      onSaved(student ? t('Данные ученика обновлены') : t('Ученик добавлен'), Number(groupId));
+      onSaved(student ? t('Данные ученика обновлены') : t('Ученик добавлен'), updated.groupId);
     } catch (error) {
       const data = fields(error);
       setError(data.message);
@@ -343,41 +365,29 @@ export function StudentForm({
         />
         <div className="field">
           <StudentSelect
-            id="group-select"
-            label={t('Группа')}
-            placeholder={t('Выберите группу')}
-            value={groupId}
+            id="enrollment-course"
+            label={t('Курс')}
+            placeholder={t('Выберите курс')}
+            value={courseId}
             onChange={(value) => {
-              setGroupId(value);
-              clearField(setErrors, 'groupId');
+              setCourseId(value);
+              clearField(setErrors, 'courseId');
             }}
-            options={groups.map((group) => ({
-              value: String(group.id),
-              label: `${group.name} · ${group.courseName}`,
-            }))}
-            error={errors.groupId?.[0]}
+            options={courses.map((course) => ({ value: String(course.id), label: course.name }))}
+            error={errors.courseId?.[0]}
           />
         </div>
-        {!groups.length && (
-          <div className="course-empty-hint">
-            <p className="form-hint">{t('Сначала создайте группу и выберите для неё курс.')}</p>
-            <button className="button secondary full" type="button" onClick={onCreateGroup}>
-              {t('Создать группу')}
-            </button>
-          </div>
-        )}
-        {groupId && (
-          <p className="form-hint">
-            {t('Курс группы')}: {groups.find((group) => String(group.id) === groupId)?.courseName} ·{' '}
-            {formatMoney(groups.find((group) => String(group.id) === groupId)?.monthlyAmount ?? 0)}
-          </p>
+        {!courses.length && (
+          <button className="button secondary full" type="button" onClick={onCreateCourse}>
+            {t('Добавить курс')}
+          </button>
         )}
         {error && (
           <p className="error-message" role="alert">
             {t(error)}
           </p>
         )}
-        <button className="button primary full" type="submit" disabled={busy || !groups.length}>
+        <button className="button primary full" type="submit" disabled={busy || !courses.length}>
           {busy ? <Spinner /> : <Check size={18} />}
           {busy ? t('Сохраняем…') : student ? t('Сохранить изменения') : t('Добавить ученика')}
         </button>
@@ -421,7 +431,7 @@ export function History({ student }: { student: Student }) {
     <>
       <div className="history-total">
         <span>{t('Всего внесено за всё время')}</span>
-        <strong>{formatMoney(history.totalAmount)}</strong>
+        <strong>{formatMoney(history.totalAmount, student.currency)}</strong>
       </div>
       <div className="inset-list">
         {history.items.map((payment) => (
@@ -430,7 +440,7 @@ export function History({ student }: { student: Student }) {
               <ArrowDownLeft size={18} />
             </span>
             <div>
-              <strong>{formatMoney(payment.amount)}</strong>
+              <strong>{formatMoney(payment.amount, student.currency)}</strong>
               <small>
                 {t('Оплата #')}
                 {payment.id}

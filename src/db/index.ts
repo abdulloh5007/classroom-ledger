@@ -9,7 +9,7 @@ export function openDatabase(path: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
   const version = db.pragma('user_version', { simple: true }) as number;
-  if (version > 5) {
+  if (version > 6) {
     db.close();
     throw new Error('Версия БД новее приложения');
   }
@@ -125,5 +125,59 @@ export function openDatabase(path: string): Database.Database {
         PRAGMA user_version = 5;
       `);
     })();
+  if (version < 6) {
+    // Rebuild the old UNIQUE(name, amount) constraint without changing any IDs
+    // or financial values. Foreign keys are rechecked before committing.
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        const previousSequence = db
+          .prepare("SELECT seq FROM sqlite_sequence WHERE name='courses'")
+          .get() as { seq: number } | undefined;
+        const triggers = db
+          .prepare(
+            `SELECT name, sql FROM sqlite_master WHERE type='trigger'
+          AND (tbl_name='courses' OR name IN ('group_student_match_insert', 'group_student_match_update'))`,
+          )
+          .all() as { name: string; sql: string }[];
+        for (const trigger of triggers)
+          db.exec(`DROP TRIGGER "${trigger.name.replaceAll('"', '""')}"`);
+        db.exec(`
+          CREATE TABLE courses_next (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 80),
+            monthly_amount INTEGER NOT NULL CHECK(typeof(monthly_amount)='integer' AND monthly_amount BETWEEN 1 AND 1000000000000),
+            currency TEXT NOT NULL DEFAULT 'UZS' CHECK(currency IN ('UZS','USD')),
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            UNIQUE(name, currency, monthly_amount)
+          );
+          INSERT INTO courses_next(id,name,monthly_amount,created_at) SELECT id,name,monthly_amount,created_at FROM courses;
+          DROP TABLE courses;
+          ALTER TABLE courses_next RENAME TO courses;
+        `);
+        if (previousSequence)
+          db.prepare("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='courses'").run(
+            previousSequence.seq,
+          );
+        for (const trigger of triggers) {
+          if (trigger.name !== 'course_currency_immutable') db.exec(trigger.sql);
+        }
+        db.exec(`
+          CREATE TRIGGER course_currency_immutable BEFORE UPDATE OF currency ON courses
+          WHEN NEW.currency<>OLD.currency AND EXISTS(SELECT 1 FROM students WHERE course_id=OLD.id) BEGIN
+            SELECT RAISE(ABORT, 'Currency cannot be changed for an enrolled course');
+          END;
+          PRAGMA user_version=6;
+        `);
+        if ((db.pragma('foreign_key_check') as unknown[]).length)
+          throw new Error('Нарушены связи при миграции валют');
+      })();
+    } catch (error) {
+      db.close();
+      throw error;
+    } finally {
+      if (db.open) db.pragma('foreign_keys = ON');
+    }
+  }
   return db;
 }

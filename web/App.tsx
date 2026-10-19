@@ -29,7 +29,7 @@ import { FloatingControls } from './FloatingControls';
 import { PaymentFilter, type PaymentStatus } from './PaymentFilter';
 import { revealTheme } from './theme';
 import { Courses, CourseForm, DeleteCourse } from './Courses';
-import { GroupForm, GroupSwitcher } from './Groups';
+import { GroupForm } from './Groups';
 
 type Modal =
   | { type: 'payment'; studentId?: number }
@@ -37,7 +37,7 @@ type Modal =
   | { type: 'history' | 'delete'; student: Student }
   | { type: 'course'; course?: Course }
   | { type: 'deleteCourse'; course: Course }
-  | { type: 'group' | 'switchGroup' };
+  | { type: 'group' };
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -109,7 +109,13 @@ export function App({
     setSheetOpen(true);
   }, []);
   const createGroup = useCallback(() => showModal({ type: 'group' }), [showModal]);
-  const switchGroup = useCallback(() => showModal({ type: 'switchGroup' }), [showModal]);
+  const changeGroup = useCallback(
+    (id: number) => {
+      selectGroup(id);
+      setQuery('');
+    },
+    [selectGroup],
+  );
   async function openHistory(student: Student) {
     const request = ++historyRequest.current;
     setOpeningHistory(student.id);
@@ -193,32 +199,27 @@ export function App({
     ? ''
     : modal.type === 'group'
       ? t('Создать группу')
-      : modal.type === 'switchGroup'
-        ? t('Сменить группу')
-        : modal.type === 'course'
-          ? t(modal.course ? 'Редактировать курс' : 'Новый курс')
-          : modal.type === 'deleteCourse'
-            ? t('Удалить курс?')
-            : modal.type === 'payment'
-              ? t('Внести оплату')
-              : modal.type === 'student'
-                ? modal.student
-                  ? t('Редактировать ученика')
-                  : t('Новый ученик')
-                : modal.type === 'delete'
-                  ? t('Удалить ученика?')
-                  : t('История оплат');
+      : modal.type === 'course'
+        ? t(modal.course ? 'Редактировать курс' : 'Новый курс')
+        : modal.type === 'deleteCourse'
+          ? t('Удалить курс?')
+          : modal.type === 'payment'
+            ? t('Внести оплату')
+            : modal.type === 'student'
+              ? modal.student
+                ? t('Редактировать ученика')
+                : t('Новый ученик')
+              : modal.type === 'delete'
+                ? t('Удалить ученика?')
+                : t('История оплат');
   const modalDescription = !modal
     ? ''
-    : modal.type === 'group' ||
-        modal.type === 'switchGroup' ||
-        modal.type === 'course' ||
-        modal.type === 'deleteCourse'
+    : modal.type === 'group' || modal.type === 'course' || modal.type === 'deleteCourse'
       ? ''
       : modal.type === 'payment'
         ? ''
         : modal.type === 'student'
-          ? t('Данные и месячная стоимость обучения')
+          ? ''
           : modal.type === 'history'
             ? modal.student.name
             : t('Это действие нельзя отменить');
@@ -244,8 +245,10 @@ export function App({
               : ''
           }
           onCreateGroup={createGroup}
-          onSwitchGroup={switchGroup}
-          canSwitchGroup={groups.length > 0}
+          onSelectGroup={changeGroup}
+          groups={groups}
+          groupId={group?.id}
+          currency={group?.currency ?? 'UZS'}
         />
         <div className="wallet-tabs">
           <div className="segment-control" role="tablist" aria-label={t('Раздел учёта')}>
@@ -367,11 +370,13 @@ export function App({
                             <div className="payment-figures">
                               <div>
                                 <span>{t('Оплачено')}</span>
-                                <strong>{formatMoney(debtor.paid)}</strong>
+                                <strong>{formatMoney(debtor.paid, debtor.currency)}</strong>
                               </div>
                               <div>
                                 <span>{t('Осталось')}</span>
-                                <strong className="debt-figure">{formatMoney(debtor.debt)}</strong>
+                                <strong className="debt-figure">
+                                  {formatMoney(debtor.debt, debtor.currency)}
+                                </strong>
                               </div>
                             </div>
                             <div
@@ -510,7 +515,9 @@ export function App({
                                 </span>
                               </div>
                               <div className="student-fee">
-                                <strong>{formatMoney(student.monthlyAmount)}</strong>
+                                <strong>
+                                  {formatMoney(student.monthlyAmount, student.currency)}
+                                </strong>
                                 <small>{t('в месяц')}</small>
                               </div>
                             </div>
@@ -622,7 +629,8 @@ export function App({
             student={modal.student}
             groups={groups}
             initialGroupId={group?.id}
-            onCreateGroup={createGroup}
+            courses={courses}
+            onCreateCourse={() => showModal({ type: 'course' })}
             onSaved={(text, id) => {
               if (id) selectGroup(id);
               saved(text);
@@ -638,17 +646,6 @@ export function App({
               saved(t('Группа создана'));
             }}
             onCreateCourse={() => showModal({ type: 'course' })}
-          />
-        )}
-        {modal?.type === 'switchGroup' && (
-          <GroupSwitcher
-            groups={groups}
-            activeId={group?.id}
-            onSelect={(id) => {
-              selectGroup(id);
-              setQuery('');
-              close();
-            }}
           />
         )}
         {modal?.type === 'course' && <CourseForm course={modal.course} onSaved={saved} />}

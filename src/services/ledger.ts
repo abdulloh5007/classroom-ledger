@@ -11,6 +11,7 @@ import {
   courseSchema,
   coursePatchSchema,
   groupSchema,
+  type Currency,
   type Group,
   type Course,
   type Student,
@@ -20,10 +21,11 @@ import {
   type Admin,
 } from '../contracts.js';
 import { monthRange, currentMonth } from '../calendar.js';
+import { parseMoneyInput } from '../money.js';
 import { AppError } from '../errors.js';
 
 const studentColumns =
-  'id, name, phone, group_name AS "group", monthly_amount AS monthlyAmount, course_id AS courseId, group_id AS groupId, created_at AS createdAt';
+  'id, name, phone, group_name AS "group", (SELECT currency FROM courses WHERE id=students.course_id) AS currency, monthly_amount AS monthlyAmount, course_id AS courseId, group_id AS groupId, created_at AS createdAt';
 const paymentColumns =
   'id, student_id AS studentId, amount, paid_at AS date, created_at AS createdAt';
 export class LedgerService {
@@ -50,7 +52,7 @@ export class LedgerService {
   courses(): Course[] {
     return this.db
       .prepare(
-        `SELECT c.id, c.name, c.monthly_amount AS monthlyAmount, c.created_at AS createdAt, (SELECT COUNT(*) FROM student_groups WHERE course_id=c.id) AS groupCount, COUNT(s.id) AS studentCount FROM courses c LEFT JOIN students s ON s.course_id=c.id GROUP BY c.id ORDER BY c.name COLLATE NOCASE, c.id`,
+        `SELECT c.id, c.name, c.currency, c.monthly_amount AS monthlyAmount, c.created_at AS createdAt, (SELECT COUNT(*) FROM student_groups WHERE course_id=c.id) AS groupCount, COUNT(s.id) AS studentCount FROM courses c LEFT JOIN students s ON s.course_id=c.id GROUP BY c.id ORDER BY c.name COLLATE NOCASE, c.id`,
       )
       .all() as Course[];
   }
@@ -58,7 +60,7 @@ export class LedgerService {
     const id = idSchema.parse(rawId);
     const course = this.db
       .prepare(
-        `SELECT c.id, c.name, c.monthly_amount AS monthlyAmount, c.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE course_id=c.id) AS studentCount, (SELECT COUNT(*) FROM student_groups WHERE course_id=c.id) AS groupCount FROM courses c WHERE c.id=?`,
+        `SELECT c.id, c.name, c.currency, c.monthly_amount AS monthlyAmount, c.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE course_id=c.id) AS studentCount, (SELECT COUNT(*) FROM student_groups WHERE course_id=c.id) AS groupCount FROM courses c WHERE c.id=?`,
       )
       .get(id) as Course | undefined;
     if (!course) throw new AppError(404, 'Курс не найден');
@@ -70,13 +72,13 @@ export class LedgerService {
       .transaction(() => {
         if (
           this.db
-            .prepare('SELECT id FROM courses WHERE name=? AND monthly_amount=?')
-            .get(data.name, data.monthlyAmount)
+            .prepare('SELECT id FROM courses WHERE name=? AND monthly_amount=? AND currency=?')
+            .get(data.name, data.monthlyAmount, data.currency)
         )
           throw new AppError(409, 'Такой курс уже существует');
         const result = this.db
-          .prepare('INSERT INTO courses(name, monthly_amount) VALUES (?, ?)')
-          .run(data.name, data.monthlyAmount);
+          .prepare('INSERT INTO courses(name, monthly_amount, currency) VALUES (?, ?, ?)')
+          .run(data.name, data.monthlyAmount, data.currency);
         return this.course(Number(result.lastInsertRowid));
       })
       .immediate();
@@ -87,15 +89,19 @@ export class LedgerService {
       .transaction(() => {
         const existing = this.course(rawId);
         const data = { ...existing, ...patch };
+        if (data.currency !== existing.currency && existing.studentCount)
+          throw new AppError(409, 'Нельзя менять валюту курса с учениками');
         if (
           this.db
-            .prepare('SELECT id FROM courses WHERE name=? AND monthly_amount=? AND id<>?')
-            .get(data.name, data.monthlyAmount, existing.id)
+            .prepare(
+              'SELECT id FROM courses WHERE name=? AND monthly_amount=? AND currency=? AND id<>?',
+            )
+            .get(data.name, data.monthlyAmount, data.currency, existing.id)
         )
           throw new AppError(409, 'Такой курс уже существует');
         this.db
-          .prepare('UPDATE courses SET name=?, monthly_amount=? WHERE id=?')
-          .run(data.name, data.monthlyAmount, existing.id);
+          .prepare('UPDATE courses SET name=?, monthly_amount=?, currency=? WHERE id=?')
+          .run(data.name, data.monthlyAmount, data.currency, existing.id);
         return this.course(existing.id);
       })
       .immediate();
@@ -112,14 +118,14 @@ export class LedgerService {
   }
   private legacyCourse(name: string, amount: number): Course {
     const existing = this.db
-      .prepare('SELECT id FROM courses WHERE name=? AND monthly_amount=?')
-      .get(name, amount) as { id: number } | undefined;
+      .prepare('SELECT id FROM courses WHERE name=? AND monthly_amount=? AND currency=?')
+      .get(name, amount, 'UZS') as { id: number } | undefined;
     return existing ? this.course(existing.id) : this.createCourse({ name, monthlyAmount: amount });
   }
   groups(): Group[] {
     return this.db
       .prepare(
-        `SELECT g.id, g.name, g.course_id AS courseId, c.name AS courseName, c.monthly_amount AS monthlyAmount, g.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE group_id=g.id) AS studentCount FROM student_groups g JOIN courses c ON c.id=g.course_id ORDER BY g.id`,
+        `SELECT g.id, g.name, g.course_id AS courseId, c.name AS courseName, c.currency, c.monthly_amount AS monthlyAmount, g.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE group_id=g.id) AS studentCount FROM student_groups g JOIN courses c ON c.id=g.course_id ORDER BY g.id`,
       )
       .all() as Group[];
   }
@@ -127,7 +133,7 @@ export class LedgerService {
     const id = idSchema.parse(rawId);
     const group = this.db
       .prepare(
-        `SELECT g.id, g.name, g.course_id AS courseId, c.name AS courseName, c.monthly_amount AS monthlyAmount, g.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE group_id=g.id) AS studentCount FROM student_groups g JOIN courses c ON c.id=g.course_id WHERE g.id=?`,
+        `SELECT g.id, g.name, g.course_id AS courseId, c.name AS courseName, c.currency, c.monthly_amount AS monthlyAmount, g.created_at AS createdAt, (SELECT COUNT(*) FROM students WHERE group_id=g.id) AS studentCount FROM student_groups g JOIN courses c ON c.id=g.course_id WHERE g.id=?`,
       )
       .get(id) as Group | undefined;
     if (!group) throw new AppError(404, 'Группа не найдена');
@@ -197,6 +203,11 @@ export class LedgerService {
                     ).id,
                   )
                 : this.group(existing.groupId);
+        if (
+          existing.currency !== group.currency &&
+          this.db.prepare('SELECT 1 FROM payments WHERE student_id=? LIMIT 1').get(existing.id)
+        )
+          throw new AppError(409, 'Нельзя переводить ученика с оплатами на курс в другой валюте');
         this.db
           .prepare(
             'UPDATE students SET name=?, phone=?, group_name=?, monthly_amount=?, course_id=?, group_id=? WHERE id=?',
@@ -328,7 +339,7 @@ export class LedgerService {
     const rows = this.db
       .prepare(
         `
-      SELECT s.id AS studentId, s.name, s.phone, s.group_name AS "group", s.monthly_amount AS monthlyAmount,
+      SELECT s.id AS studentId, s.name, s.phone, s.group_name AS "group", (SELECT currency FROM courses WHERE id=s.course_id) AS currency, s.monthly_amount AS monthlyAmount,
         COALESCE(SUM(p.amount), 0) AS paid, MAX(0, s.monthly_amount - COALESCE(SUM(p.amount), 0)) AS debt
       FROM students s LEFT JOIN payments p ON p.student_id=s.id AND p.paid_at>=? AND p.paid_at<?
       WHERE (? IS NULL OR s.group_id=?) GROUP BY s.id ORDER BY debt DESC, s.name, s.id
@@ -377,11 +388,18 @@ export class LedgerService {
     if (!this.isOwner(actor)) throw new AppError(403, 'Только для владельца');
   }
 }
-export function parseAmount(text: string): number {
-  const compact = text.replace(/[ \u00a0\u202f]/g, '');
-  if (!/^\d+$/.test(compact))
+export function parseAmount(text: string, currency: Currency = 'UZS'): number {
+  const amount = parseMoneyInput(text, currency);
+  if (amount === undefined)
     throw new z.ZodError([
-      { code: 'custom', path: ['amount'], message: 'Введите целую положительную сумму' },
+      {
+        code: 'custom',
+        path: ['amount'],
+        message:
+          currency === 'USD'
+            ? 'Введите сумму в долларах, не более двух знаков после запятой'
+            : 'Введите целую положительную сумму',
+      },
     ]);
-  return moneySchema.parse(Number(compact));
+  return moneySchema.parse(amount);
 }
