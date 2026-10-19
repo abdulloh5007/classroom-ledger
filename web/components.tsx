@@ -189,10 +189,11 @@ export function AmountField({
   const display = value.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   return (
     <label className="field" htmlFor={id}>
-      <span>{label}</span>
+      <span id={`${id}-label`}>{label}</span>
       <div className="amount-input">
         <input
           id={id}
+          aria-labelledby={`${id}-label`}
           name={id}
           inputMode="numeric"
           autoComplete="off"

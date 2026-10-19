@@ -5,6 +5,8 @@ import { today, formatMoney } from '../src/calendar';
 import { api, ApiError } from './api';
 import { AmountField, Spinner, StudentSelect } from './components';
 import { invalidateHistory, prefetchHistory, useHistory } from './history';
+import { PhoneField } from './PhoneField';
+import { formatUzPhone, uzPhoneDigits } from '../src/phone';
 
 function clearField(setErrors: Dispatch<SetStateAction<Record<string, string[]>>>, key: string) {
   setErrors((previous) => {
@@ -93,9 +95,10 @@ export function PaymentForm({
           error={errors.amount?.[0]}
         />
         <label className="field" htmlFor="payment-date">
-          <span>Дата оплаты</span>
+          <span id="payment-date-label">Дата оплаты</span>
           <input
             id="payment-date"
+            aria-labelledby="payment-date-label"
             type="date"
             value={date}
             min="1900-01-01"
@@ -136,7 +139,7 @@ export function StudentForm({
   onSaved: (text: string) => void;
 }) {
   const [name, setName] = useState(student?.name ?? '');
-  const [phone, setPhone] = useState(student?.phone ?? '');
+  const [phone, setPhone] = useState(formatUzPhone(student?.phone ?? ''));
   const [group, setGroup] = useState(student?.group ?? '');
   const [amount, setAmount] = useState(student ? String(student.monthlyAmount) : '');
   const [busy, setBusy] = useState(false);
@@ -146,6 +149,13 @@ export function StudentForm({
     event.preventDefault();
     if (busy) return;
     const result = studentSchema.safeParse({ name, phone, group, monthlyAmount: Number(amount) });
+    if (uzPhoneDigits(phone).length !== 9) {
+      setErrors({
+        ...(!result.success ? result.error.flatten().fieldErrors : {}),
+        phone: ['Введите номер полностью: +998 (90) 123-56-78'],
+      });
+      return;
+    }
     if (!result.success) {
       setErrors(result.error.flatten().fieldErrors);
       return;
@@ -182,15 +192,6 @@ export function StudentForm({
               autoComplete: 'name',
             },
             {
-              key: 'phone',
-              label: 'Телефон',
-              value: phone,
-              set: setPhone,
-              type: 'tel',
-              placeholder: '+998 90 123 45 67',
-              autoComplete: 'tel',
-            },
-            {
               key: 'group',
               label: 'Группа',
               value: group,
@@ -202,13 +203,14 @@ export function StudentForm({
           ] as const
         ).map((field) => (
           <label className="field" key={field.key} htmlFor={`student-${field.key}`}>
-            <span>{field.label}</span>
+            <span id={`student-${field.key}-label`}>{field.label}</span>
             <input
               id={`student-${field.key}`}
+              aria-labelledby={`student-${field.key}-label`}
               value={field.value}
               type={field.type}
               autoComplete={field.autoComplete}
-              maxLength={field.key === 'name' ? 100 : field.key === 'phone' ? 30 : 80}
+              maxLength={field.key === 'name' ? 100 : 80}
               onChange={(event) => {
                 field.set(event.target.value);
                 clearField(setErrors, field.key);
@@ -225,6 +227,14 @@ export function StudentForm({
             )}
           </label>
         ))}
+        <PhoneField
+          value={phone}
+          onChange={(value) => {
+            setPhone(value);
+            clearField(setErrors, 'phone');
+          }}
+          error={errors.phone?.[0]}
+        />
         <AmountField
           id="monthly-amount"
           label="Оплата в месяц"

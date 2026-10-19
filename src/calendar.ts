@@ -31,3 +31,7 @@ export function monthRange(value: string): { start: string; end: string } {
 }
 export const formatMoney = (amount: number): string =>
   `${new Intl.NumberFormat('ru-RU').format(amount).replace(/\u00a0/g, ' ')} сум`;
+export const monthLabel = (month: string): string =>
+  new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    .format(new Date(`${month}-01T00:00:00Z`))
+    .replace(' г.', '');
