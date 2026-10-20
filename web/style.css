@@ -1328,6 +1328,7 @@ html {
 
 /* Wallet: the overview stays mounted while the lower tab panel changes. */
 .wallet-shell {
+  --wallet-radius: 36px;
   padding: 0 0 calc(100px + env(safe-area-inset-bottom));
 }
 .wallet-shell main {
@@ -1339,7 +1340,7 @@ html {
   border-top: 0;
   color: var(--ink);
   padding: calc(18px + env(safe-area-inset-top)) 16px 14px;
-  border-radius: 0 0 36px 36px;
+  border-radius: 0 0 var(--wallet-radius) var(--wallet-radius);
   text-align: center;
   position: relative;
   isolation: isolate;
@@ -1592,7 +1593,7 @@ html {
     padding-top: 24px;
   }
   .wallet-hero {
-    border-radius: 36px;
+    border-radius: var(--wallet-radius);
     padding-top: 22px;
   }
   .wallet-content {
@@ -2171,7 +2172,7 @@ html.theme-revealing::view-transition-old(root) {
     box-shadow 280ms var(--curve);
 }
 .hero-sticky-bar[data-stuck='true'] {
-  border-radius: 0 0 24px 24px;
+  border-radius: 0 0 var(--wallet-radius) var(--wallet-radius);
   box-shadow: 0 8px 18px -14px #0005;
 }
 .wallet-hero {
