@@ -419,6 +419,7 @@ main {
 }
 .card-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 .debtor-card {
@@ -2036,6 +2037,10 @@ html.theme-revealing::view-transition-old(root) {
   gap: 0;
   margin: 0;
   color: var(--ink);
+}
+.hero-top-row .wallet-group-name:has(.group-edit-button) {
+  /* Balance the pencil's trailing hit area so the visible title and icon are centred. */
+  padding-inline-start: calc((44px - 15px) / 2);
 }
 .hero-group-copy {
   display: grid;
