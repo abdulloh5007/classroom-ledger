@@ -1,3 +1,4 @@
+import { Marquee } from './Marquee';
 import { useI18n } from './i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
@@ -26,7 +27,7 @@ import { FloatingControls } from './FloatingControls';
 import { PaymentFilter, type PaymentStatus } from './PaymentFilter';
 import { revealTheme } from './theme';
 import { CourseForm } from './Courses';
-import { GroupForm, GroupEditor } from './Groups';
+import { GroupForm, GroupEditor, type GroupDraft } from './Groups';
 
 type Modal =
   | { type: 'payment'; studentId?: number }
@@ -73,6 +74,7 @@ export function App({
     group,
     selectGroup,
     registerGroup,
+    registerCourse,
     courses,
     months,
     loading: monthLoading,
@@ -105,7 +107,11 @@ export function App({
     setModal(value);
     setSheetOpen(true);
   }, []);
-  const createGroup = useCallback(() => showModal({ type: 'group' }), [showModal]);
+  const [groupDraft, setGroupDraft] = useState<GroupDraft>({ name: '', courseId: '' });
+  const createGroup = useCallback(() => {
+    setGroupDraft({ name: '', courseId: '' });
+    showModal({ type: 'group' });
+  }, [showModal]);
   const editGroup = useCallback(() => {
     if (group) showModal({ type: 'editGroup', group });
   }, [group, showModal]);
@@ -237,7 +243,7 @@ export function App({
           totalStudents={students.length}
           ready={ready}
           onMonthChange={selectMonth}
-          courseName={group?.courseName ?? ''}
+          groupName={group?.name ?? ''}
           onCreateGroup={createGroup}
           onEditGroup={editGroup}
           onSelectGroup={changeGroup}
@@ -355,7 +361,7 @@ export function App({
                               <span className="avatar">{initials(debtor.name)}</span>
                               <div className="student-info">
                                 <h3>{debtor.name}</h3>
-                                <span>{debtor.group}</span>
+                                <Marquee text={`${debtor.group} • ${group?.courseName ?? ''}`} />
                               </div>
                               <span className="student-id">#{debtor.studentId}</span>
                             </div>
@@ -409,11 +415,38 @@ export function App({
                         ))}
                       </AnimatePresence>
                     </div>
-                    {!debtors.length && students.length > 0 && !future && (
+                    {!debtors.length && (
                       <Empty
-                        icon={<Users size={25} />}
-                        title={t('Нет учеников по фильтру')}
-                        text={t('Выберите другой статус оплаты с помощью фильтра.')}
+                        title={t(
+                          !group
+                            ? 'Нет групп'
+                            : !students.length
+                              ? 'Нет учеников'
+                              : future
+                                ? 'Месяц ещё не начался'
+                                : 'Нет учеников по фильтру',
+                        )}
+                        action={
+                          <button
+                            className="button primary"
+                            onClick={() => {
+                              if (!group) createGroup();
+                              else if (!students.length) showModal({ type: 'student' });
+                              else if (future) selectMonth(currentMonth());
+                              else setPaymentStatus('all');
+                            }}
+                          >
+                            {t(
+                              !group
+                                ? 'Создать группу'
+                                : !students.length
+                                  ? 'Добавить ученика'
+                                  : future
+                                    ? 'Текущий месяц'
+                                    : 'Показать всех',
+                            )}
+                          </button>
+                        }
                       />
                     )}
                   </>
@@ -442,7 +475,7 @@ export function App({
                         <button
                           className="button primary add-student"
                           aria-label={t('Добавить ученика')}
-                          onClick={() => showModal({ type: 'student' })}
+                          onClick={() => (group ? showModal({ type: 'student' }) : createGroup())}
                         >
                           <Plus size={19} />
                           <span>{t('Добавить')}</span>
@@ -472,9 +505,9 @@ export function App({
                               </span>
                               <div className="student-info">
                                 <h3>{student.name}</h3>
-                                <span>
-                                  {student.group} · #{student.id}
-                                </span>
+                                <Marquee
+                                  text={`${student.group} • ${group?.courseName ?? ''} · #${student.id}`}
+                                />
                               </div>
                               <div className="student-fee">
                                 <strong>
@@ -548,11 +581,33 @@ export function App({
                         ))}
                       </AnimatePresence>
                     </div>
-                    {!filtered.length && query && students.length > 0 && (
+                    {!filtered.length && (
                       <Empty
-                        icon={<Users size={25} />}
-                        title={t('Никого не нашли')}
-                        text={t('Попробуйте другое имя, телефон или название группы.')}
+                        title={t(
+                          !group
+                            ? 'Нет групп'
+                            : students.length
+                              ? 'Никого не нашли'
+                              : 'Нет учеников',
+                        )}
+                        action={
+                          <button
+                            className="button primary"
+                            onClick={() => {
+                              if (students.length) setQuery('');
+                              else if (group) showModal({ type: 'student' });
+                              else createGroup();
+                            }}
+                          >
+                            {t(
+                              students.length
+                                ? 'Очистить поиск'
+                                : group
+                                  ? 'Добавить ученика'
+                                  : 'Создать группу',
+                            )}
+                          </button>
+                        }
                       />
                     )}
                   </>
@@ -576,8 +631,7 @@ export function App({
             student={modal.student}
             groups={groups}
             initialGroupId={group?.id}
-            courses={courses}
-            onCreateCourse={() => showModal({ type: 'course' })}
+            onCreateGroup={createGroup}
             onSaved={(text, id) => {
               if (id) selectGroup(id);
               saved(text);
@@ -586,6 +640,8 @@ export function App({
         )}
         {modal?.type === 'group' && (
           <GroupForm
+            draft={groupDraft}
+            onDraftChange={setGroupDraft}
             courses={courses}
             onCreated={(created) => {
               registerGroup(created);
@@ -595,7 +651,18 @@ export function App({
             onCreateCourse={() => showModal({ type: 'course' })}
           />
         )}
-        {modal?.type === 'course' && <CourseForm course={modal.course} onSaved={saved} />}
+        {modal?.type === 'course' && (
+          <CourseForm
+            course={modal.course}
+            onBack={() => showModal({ type: 'group' })}
+            onSaved={(text, created) => {
+              registerCourse(created);
+              setGroupDraft((draft) => ({ ...draft, courseId: String(created.id) }));
+              setToast({ id: Date.now(), text });
+              showModal({ type: 'group' });
+            }}
+          />
+        )}
         {modal?.type === 'editGroup' && (
           <GroupEditor
             group={modal.group}

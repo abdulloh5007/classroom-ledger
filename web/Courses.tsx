@@ -1,6 +1,6 @@
 import { moneyInput, parseMoneyInput } from '../src/money';
 import { useState, type FormEvent } from 'react';
-import { Check } from 'lucide-react';
+import { ArrowLeft, Check } from 'lucide-react';
 import { courseSchema, type Course, type Currency } from '../src/contracts';
 import { AmountField, Spinner, StudentSelect } from './components';
 import { api, ApiError } from './api';
@@ -8,10 +8,12 @@ import { useI18n } from './i18n';
 
 export function CourseForm({
   course,
+  onBack,
   onSaved,
 }: {
   course?: Course;
-  onSaved: (text: string) => void;
+  onBack: () => void;
+  onSaved: (text: string, course: Course) => void;
 }) {
   const { t } = useI18n();
   const [name, setName] = useState(course?.name ?? '');
@@ -38,11 +40,11 @@ export function CourseForm({
     setError('');
     setErrors({});
     try {
-      await api(course ? `/courses/${course.id}` : '/courses', {
+      const savedCourse = await api<Course>(course ? `/courses/${course.id}` : '/courses', {
         method: course ? 'PATCH' : 'POST',
         body: JSON.stringify(parsed.data),
       });
-      onSaved(t(course ? 'Курс обновлён' : 'Курс добавлен'));
+      onSaved(t(course ? 'Курс обновлён' : 'Курс добавлен'), savedCourse);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Не удалось сохранить. Повторите попытку.');
       if (error instanceof ApiError) setErrors(error.fields);
@@ -57,6 +59,7 @@ export function CourseForm({
           <span>{t('Название курса')}</span>
           <input
             id="course-name"
+            autoFocus
             value={name}
             maxLength={80}
             required
@@ -115,10 +118,20 @@ export function CourseForm({
             {t(error)}
           </p>
         )}
-        <button className="button primary full" type="submit" disabled={busy}>
-          {busy ? <Spinner /> : <Check size={18} />}
-          {t(busy ? 'Сохраняем…' : course ? 'Сохранить изменения' : 'Добавить курс')}
-        </button>
+        <div className="form-actions">
+          <button
+            className="button secondary round-action"
+            type="button"
+            onClick={onBack}
+            aria-label={t('Назад к созданию группы')}
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <button className="button primary" type="submit" disabled={busy}>
+            {busy ? <Spinner /> : <Check size={18} />}
+            {t(busy ? 'Сохраняем…' : course ? 'Сохранить изменения' : 'Добавить курс')}
+          </button>
+        </div>
       </fieldset>
     </form>
   );

@@ -2,7 +2,7 @@ import { Pencil } from 'lucide-react';
 import { Marquee } from './Marquee';
 import { currencyUnit, moneyNumber } from '../src/money';
 import { useI18n } from './i18n';
-import { memo, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { Currency, Group, Debtor } from '../src/contracts';
 import { currentMonth, shiftMonth } from '../src/calendar';
@@ -16,7 +16,7 @@ export const WalletHero = memo(function WalletHero({
   totalStudents,
   ready,
   onMonthChange,
-  courseName,
+  groupName,
   onCreateGroup,
   onEditGroup,
   onSelectGroup,
@@ -30,7 +30,7 @@ export const WalletHero = memo(function WalletHero({
   totalStudents: number;
   ready: boolean;
   onMonthChange: (month: string) => void;
-  courseName: string;
+  groupName: string;
   onCreateGroup: () => void;
   onEditGroup: () => void;
   onSelectGroup: (id: number) => void;
@@ -62,45 +62,13 @@ export const WalletHero = memo(function WalletHero({
     }
   }
   return (
-    <motion.section
-      className="wallet-hero"
-      aria-label={t('Сводка оплат за месяц')}
-      style={{ touchAction: 'pan-y' }}
-      onPointerDownCapture={(event) => {
-        const control =
-          event.target instanceof Element ? event.target.closest('button, [role="menu"]') : null;
-        ignorePan.current = Boolean(control && !control.classList.contains('wallet-edge'));
-        moved.current = false;
-      }}
-      onPanStart={() => {
-        if (!ignorePan.current) setDragging(true);
-      }}
-      onPan={(_, info) => {
-        if (ignorePan.current) return;
-        if (Math.hypot(info.offset.x, info.offset.y) > 8) moved.current = true;
-        if (!reduced) setDrag(info.offset.x);
-      }}
-      onPointerCancel={() => {
-        setDragging(false);
-        setDrag(0);
-        moved.current = true;
-      }}
-      onPanEnd={(_, info) => {
-        if (ignorePan.current) return;
-        setDragging(false);
-        setDrag(0);
-        if (Math.abs(info.offset.x) > 45 && Math.abs(info.offset.x) > Math.abs(info.offset.y)) {
-          moved.current = true;
-          shift(info.offset.x < 0 ? 1 : -1);
-        }
-      }}
-    >
-      <div className="hero-top-row">
+    <>
+      <StickyHeroBar>
         <MonthPicker month={month} direction={direction} onChange={onMonthChange} compact />
-        <div className="wallet-group-name" title={courseName}>
+        <div className="wallet-group-name" title={groupName}>
           <div className="hero-group-copy">
             <div className="hero-group-title">
-              <Marquee text={ready ? courseName || t('Нет курсов') : t('Загрузка…')} />
+              <Marquee text={ready ? groupName || t('Нет групп') : t('Загрузка…')} />
             </div>
           </div>
           {ready && groupId && (
@@ -120,98 +88,147 @@ export const WalletHero = memo(function WalletHero({
           activeId={groupId}
           ready={ready}
         />
-      </div>
-      <div className="wallet-balance-area">
-        <motion.div
-          ref={carousel}
-          className="wallet-carousel"
-          aria-roledescription={t('карусель')}
-          aria-label={t('Сумма и число должников по месяцам')}
-        >
-          <AnimatePresence initial={false}>
-            {slides.map(({ key, offset }) => {
-              const relative = Math.abs(
-                offset + drag / ((carousel.current?.clientWidth ?? 390) * 0.76 * 0.75),
-              );
-              const rows =
-                key <= currentMonth() ? months[key]?.filter((row) => row.debt > 0) : undefined;
-              const amount =
-                rows && ready
-                  ? moneyNumber(
-                      rows.reduce((sum, row) => sum + row.debt, 0),
-                      currency,
-                    )
-                  : '—';
-              return (
-                <motion.div
-                  key={key}
-                  className="wallet-balance-slide"
-                  data-month={key}
-                  aria-hidden={offset !== 0}
-                  role="group"
-                  aria-label={monthLabel(key)}
-                  initial={{
-                    x: `calc(${offset * 75}% + 0px)`,
-                    scale: reduced ? 1 : 0.6,
-                    opacity: 0,
-                  }}
-                  animate={{
-                    x: `calc(${offset * 75}% + ${drag}px)`,
-                    scale: reduced ? 1 : 1 - Math.min(relative, 1.25) * 0.4,
-                    opacity:
-                      relative <= 1
-                        ? 1 - relative * 0.08
-                        : Math.max(0, 0.92 - (relative - 1) * 1.84),
-                  }}
-                  exit={{
-                    x: `calc(${-direction * 150}% + 0px)`,
-                    scale: reduced ? 1 : 0.5,
-                    opacity: 0,
-                  }}
-                  transition={
-                    reduced || dragging
-                      ? { duration: 0 }
-                      : { type: 'spring', stiffness: 290, damping: 32, mass: 0.85 }
-                  }
-                >
-                  <FittedAmount amount={amount} active={offset === 0} currency={currency} />
-                  <span
-                    className="wallet-debtor-count"
-                    data-testid={offset === 0 ? 'wallet-count' : undefined}
+      </StickyHeroBar>
+      <motion.section
+        className="wallet-hero"
+        aria-label={t('Сводка оплат за месяц')}
+        style={{ touchAction: 'pan-y' }}
+        onPointerDownCapture={(event) => {
+          const control =
+            event.target instanceof Element ? event.target.closest('button, [role="menu"]') : null;
+          ignorePan.current = Boolean(control && !control.classList.contains('wallet-edge'));
+          moved.current = false;
+        }}
+        onPanStart={() => {
+          if (!ignorePan.current) setDragging(true);
+        }}
+        onPan={(_, info) => {
+          if (ignorePan.current) return;
+          if (Math.hypot(info.offset.x, info.offset.y) > 8) moved.current = true;
+          if (!reduced) setDrag(info.offset.x);
+        }}
+        onPointerCancel={() => {
+          setDragging(false);
+          setDrag(0);
+          moved.current = true;
+        }}
+        onPanEnd={(_, info) => {
+          if (ignorePan.current) return;
+          setDragging(false);
+          setDrag(0);
+          if (Math.abs(info.offset.x) > 45 && Math.abs(info.offset.x) > Math.abs(info.offset.y)) {
+            moved.current = true;
+            shift(info.offset.x < 0 ? 1 : -1);
+          }
+        }}
+      >
+        <div className="wallet-balance-area">
+          <motion.div
+            ref={carousel}
+            className="wallet-carousel"
+            aria-roledescription={t('карусель')}
+            aria-label={t('Сумма и число должников по месяцам')}
+          >
+            <AnimatePresence initial={false}>
+              {slides.map(({ key, offset }) => {
+                const relative = Math.abs(
+                  offset + drag / ((carousel.current?.clientWidth ?? 390) * 0.76 * 0.75),
+                );
+                const rows =
+                  key <= currentMonth() ? months[key]?.filter((row) => row.debt > 0) : undefined;
+                const amount =
+                  rows && ready
+                    ? moneyNumber(
+                        rows.reduce((sum, row) => sum + row.debt, 0),
+                        currency,
+                      )
+                    : '—';
+                return (
+                  <motion.div
+                    key={key}
+                    className="wallet-balance-slide"
+                    data-month={key}
+                    aria-hidden={offset !== 0}
+                    role="group"
+                    aria-label={monthLabel(key)}
+                    initial={{
+                      x: `calc(${offset * 75}% + 0px)`,
+                      scale: reduced ? 1 : 0.6,
+                      opacity: 0,
+                    }}
+                    animate={{
+                      x: `calc(${offset * 75}% + ${drag}px)`,
+                      scale: reduced ? 1 : 1 - Math.min(relative, 1.25) * 0.4,
+                      opacity:
+                        relative <= 1
+                          ? 1 - relative * 0.08
+                          : Math.max(0, 0.92 - (relative - 1) * 1.84),
+                    }}
+                    exit={{
+                      x: `calc(${-direction * 150}% + 0px)`,
+                      scale: reduced ? 1 : 0.5,
+                      opacity: 0,
+                    }}
+                    transition={
+                      reduced || dragging
+                        ? { duration: 0 }
+                        : { type: 'spring', stiffness: 290, damping: 32, mass: 0.85 }
+                    }
                   >
-                    {t('Должники')}{' '}
-                    <b>{rows && ready ? `${rows.length} / ${totalStudents}` : '— / —'}</b>
-                  </span>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </motion.div>
-      </div>
-      {([-1, 1] as const).map((delta) => (
-        <button
-          key={delta}
-          className={`wallet-edge ${delta < 0 ? 'previous' : 'next'}`}
-          aria-label={delta < 0 ? t('Предыдущий месяц') : t('Следующий месяц')}
-          disabled={month === (delta < 0 ? '1900-01' : '9999-11')}
-          onClick={(event) => {
-            if (!moved.current || event.detail === 0) shift(delta);
-          }}
-        />
-      ))}
-      <span className="sr-only" role="status">
-        {future
-          ? t('Будущий месяц: данных пока нет')
-          : !months[month] || !ready
-            ? t('Загрузка сводки')
-            : `${monthLabel(month)}: ${formatMoney(
-                months[month]!.reduce((sum, row) => sum + row.debt, 0),
-                currency,
-              )}, ${t('Должники')} ${months[month]!.filter((row) => row.debt > 0).length} / ${totalStudents}`}
-      </span>
-    </motion.section>
+                    <FittedAmount amount={amount} active={offset === 0} currency={currency} />
+                    <span
+                      className="wallet-debtor-count"
+                      data-testid={offset === 0 ? 'wallet-count' : undefined}
+                    >
+                      {t('Должники')}{' '}
+                      <b>{rows && ready ? `${rows.length} / ${totalStudents}` : '— / —'}</b>
+                    </span>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </motion.div>
+        </div>
+        {([-1, 1] as const).map((delta) => (
+          <button
+            key={delta}
+            className={`wallet-edge ${delta < 0 ? 'previous' : 'next'}`}
+            aria-label={delta < 0 ? t('Предыдущий месяц') : t('Следующий месяц')}
+            disabled={month === (delta < 0 ? '1900-01' : '9999-11')}
+            onClick={(event) => {
+              if (!moved.current || event.detail === 0) shift(delta);
+            }}
+          />
+        ))}
+        <span className="sr-only" role="status">
+          {future
+            ? t('Будущий месяц: данных пока нет')
+            : !months[month] || !ready
+              ? t('Загрузка сводки')
+              : `${monthLabel(month)}: ${formatMoney(
+                  months[month]!.reduce((sum, row) => sum + row.debt, 0),
+                  currency,
+                )}, ${t('Должники')} ${months[month]!.filter((row) => row.debt > 0).length} / ${totalStudents}`}
+        </span>
+      </motion.section>
+    </>
   );
 });
+
+function StickyHeroBar({ children }: { children: React.ReactNode }) {
+  const [stuck, setStuck] = useState(() => window.scrollY > 1);
+  useEffect(() => {
+    const update = () => setStuck(window.scrollY > 1);
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    return () => window.removeEventListener('scroll', update);
+  }, []);
+  return (
+    <div className="hero-sticky-bar" data-stuck={stuck || undefined}>
+      <div className="hero-top-row">{children}</div>
+    </div>
+  );
+}
 
 function FittedAmount({
   amount,

@@ -1,3 +1,4 @@
+import { Marquee } from './Marquee';
 import { FieldHelp } from './FieldHelp';
 import type { Currency } from '../src/contracts';
 import { currencyUnit } from '../src/money';
@@ -142,20 +143,24 @@ export function StudentSelect({
   error?: string;
 }) {
   const { t } = useI18n();
+  const selected = options.find((option) => option.value === value);
 
   return (
     <>
-      <label className="field-label" id={`${id}-label`}>
+      <label className="field-label" id={`${id}-label`} htmlFor={id}>
         {label ?? t('Ученик')}{' '}
       </label>
       <Select.Root value={value} onValueChange={onChange} disabled={disabled} required>
         <Select.Trigger
+          id={id}
           className="select-trigger"
           aria-labelledby={`${id}-label`}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${id}-error` : undefined}
         >
-          <Select.Value placeholder={placeholder ?? t('Выберите ученика')} />
+          <Select.Value placeholder={placeholder ?? t('Выберите ученика')}>
+            {selected && <Marquee text={selected.label} />}
+          </Select.Value>
           <Select.Icon>
             <ChevronDown className="select-chevron" size={17} />
           </Select.Icon>
@@ -171,8 +176,15 @@ export function StudentSelect({
             <Select.ScrollUpButton className="select-scroll">↑</Select.ScrollUpButton>
             <Select.Viewport className="select-viewport">
               {options.map((option) => (
-                <Select.Item className="select-item" key={option.value} value={option.value}>
-                  <Select.ItemText>{option.label}</Select.ItemText>
+                <Select.Item
+                  className="select-item"
+                  key={option.value}
+                  value={option.value}
+                  textValue={option.label}
+                >
+                  <Select.ItemText>
+                    <Marquee text={option.label} />
+                  </Select.ItemText>
                   <Select.ItemIndicator>
                     <Check size={16} />
                   </Select.ItemIndicator>
@@ -273,16 +285,16 @@ export function Empty({
   text,
   action,
 }: {
-  icon: ReactNode;
+  icon?: ReactNode;
   title: string;
-  text: string;
+  text?: string;
   action?: ReactNode;
 }) {
   return (
     <motion.div className="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="empty-icon">{icon}</div>
+      {icon && <div className="empty-icon">{icon}</div>}
       <h2>{title}</h2>
-      <p>{text}</p>
+      {text && <p>{text}</p>}
       {action}
     </motion.div>
   );

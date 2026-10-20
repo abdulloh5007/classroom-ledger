@@ -30,6 +30,9 @@ export function useLedger(month: string) {
     [selectGroup],
   );
   const [courses, setCourses] = useState<Course[]>([]);
+  const registerCourse = useCallback((course: Course) => {
+    setCourses((rows) => [...rows.filter((row) => row.id !== course.id), course]);
+  }, []);
   const [allStudents, setStudents] = useState<Student[]>([]);
   const [studentsReady, setStudentsReady] = useState(false);
   const [months, setMonths] = useState<Record<string, Debtor[]>>({});
@@ -156,6 +159,7 @@ export function useLedger(month: string) {
     group,
     selectGroup,
     registerGroup,
+    registerCourse,
     students,
     courses,
     months: scopedMonths,

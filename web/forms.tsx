@@ -2,13 +2,7 @@ import { moneyInput, parseMoneyInput } from '../src/money';
 import { useI18n } from './i18n';
 import { useEffect, useState, type FormEvent, type Dispatch, type SetStateAction } from 'react';
 import { ArrowDownLeft, Check, Trash2 } from 'lucide-react';
-import {
-  paymentSchema,
-  courseEnrollmentSchema,
-  type Student,
-  type Group,
-  type Course,
-} from '../src/contracts';
+import { paymentSchema, studentEnrollmentSchema, type Student, type Group } from '../src/contracts';
 import { today } from '../src/calendar';
 import { api, ApiError } from './api';
 import { AmountField, Spinner, StudentSelect } from './components';
@@ -253,14 +247,12 @@ export function StudentForm({
   student,
   groups,
   initialGroupId,
-  courses,
-  onCreateCourse,
+  onCreateGroup,
   onSaved,
 }: {
   groups: Group[];
   initialGroupId?: number;
-  courses: Course[];
-  onCreateCourse: () => void;
+  onCreateGroup: () => void;
   student?: Student;
   onSaved: (text: string, groupId?: number) => void;
 }) {
@@ -268,17 +260,14 @@ export function StudentForm({
 
   const [name, setName] = useState(student?.name ?? '');
   const [phone, setPhone] = useState(formatUzPhone(student?.phone ?? ''));
-  const initialGroup = groups.find((group) => group.id === (student?.groupId ?? initialGroupId));
-  const [courseId, setCourseId] = useState(
-    String(student?.courseId ?? initialGroup?.courseId ?? ''),
-  );
+  const [groupId, setGroupId] = useState(String(student?.groupId ?? initialGroupId ?? ''));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const result = courseEnrollmentSchema.safeParse({ name, phone, courseId: Number(courseId) });
+    const result = studentEnrollmentSchema.safeParse({ name, phone, groupId: Number(groupId) });
     if (uzPhoneDigits(phone).length !== 9) {
       setErrors({
         ...(!result.success ? result.error.flatten().fieldErrors : {}),
@@ -294,16 +283,9 @@ export function StudentForm({
     setError('');
     setErrors({});
     try {
-      const matchingGroup =
-        initialGroup?.courseId === Number(courseId)
-          ? initialGroup
-          : groups.find((group) => group.courseId === Number(courseId));
-      const payload = matchingGroup
-        ? { name: result.data.name, phone: result.data.phone, groupId: matchingGroup.id }
-        : result.data;
       const updated = await api<Student>(student ? `/students/${student.id}` : '/students', {
         method: student ? 'PATCH' : 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(result.data),
       });
       onSaved(student ? t('Данные ученика обновлены') : t('Ученик добавлен'), updated.groupId);
     } catch (error) {
@@ -365,21 +347,24 @@ export function StudentForm({
         />
         <div className="field">
           <StudentSelect
-            id="enrollment-course"
-            label={t('Курс')}
-            placeholder={t('Выберите курс')}
-            value={courseId}
+            id="enrollment-group"
+            label={t('Группа')}
+            placeholder={t('Выберите группу')}
+            value={groupId}
             onChange={(value) => {
-              setCourseId(value);
-              clearField(setErrors, 'courseId');
+              setGroupId(value);
+              clearField(setErrors, 'groupId');
             }}
-            options={courses.map((course) => ({ value: String(course.id), label: course.name }))}
-            error={errors.courseId?.[0]}
+            options={groups.map((group) => ({
+              value: String(group.id),
+              label: `${group.name} • ${group.courseName}`,
+            }))}
+            error={errors.groupId?.[0]}
           />
         </div>
-        {!courses.length && (
-          <button className="button secondary full" type="button" onClick={onCreateCourse}>
-            {t('Добавить курс')}
+        {!groups.length && (
+          <button className="button secondary full" type="button" onClick={onCreateGroup}>
+            {t('Создать группу')}
           </button>
         )}
         {error && (
@@ -387,7 +372,7 @@ export function StudentForm({
             {t(error)}
           </p>
         )}
-        <button className="button primary full" type="submit" disabled={busy || !courses.length}>
+        <button className="button primary full" type="submit" disabled={busy || !groups.length}>
           {busy ? <Spinner /> : <Check size={18} />}
           {busy ? t('Сохраняем…') : student ? t('Сохранить изменения') : t('Добавить ученика')}
         </button>

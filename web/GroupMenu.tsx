@@ -1,3 +1,4 @@
+import { Marquee } from './Marquee';
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
@@ -259,8 +260,12 @@ export function GroupMenu({
                       onClick={() => choose(String(group.id))}
                     >
                       <span className="group-menu-info">
-                        <strong>{group.name}</strong>
-                        <small>{group.courseName}</small>
+                        <strong>
+                          <Marquee text={group.name} />
+                        </strong>
+                        <small>
+                          <Marquee text={group.courseName} />
+                        </small>
                       </span>
                       {group.id === activeId && <Check size={17} />}
                     </button>

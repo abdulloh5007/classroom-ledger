@@ -6,18 +6,23 @@ import { api, ApiError } from './api';
 import { AmountField, ConfirmDelete, Spinner, StudentSelect } from './components';
 import { useI18n } from './i18n';
 
+export type GroupDraft = { name: string; courseId: string };
+
 export function GroupForm({
+  draft,
+  onDraftChange,
   courses,
   onCreated,
   onCreateCourse,
 }: {
+  draft: GroupDraft;
+  onDraftChange: (draft: GroupDraft) => void;
   courses: Course[];
   onCreated: (group: Group) => void;
   onCreateCourse: () => void;
 }) {
   const { t, formatMoney } = useI18n();
-  const [name, setName] = useState('');
-  const [courseId, setCourseId] = useState('');
+  const { name, courseId } = draft;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
@@ -51,13 +56,14 @@ export function GroupForm({
           <span id="group-name-label">{t('Название группы')}</span>
           <input
             id="group-name"
+            autoFocus
             aria-labelledby="group-name-label"
             value={name}
             maxLength={80}
             required
             autoComplete="off"
             onChange={(event) => {
-              setName(event.target.value);
+              onDraftChange({ ...draft, name: event.target.value });
               setErrors((previous) => ({ ...previous, name: [] }));
             }}
             aria-invalid={Boolean(errors.name?.length)}
@@ -76,7 +82,7 @@ export function GroupForm({
             placeholder={t('Выберите курс')}
             value={courseId}
             onChange={(value) => {
-              setCourseId(value);
+              onDraftChange({ ...draft, courseId: value });
               setErrors((previous) => ({ ...previous, courseId: [] }));
             }}
             options={courses.map((course) => ({
@@ -86,22 +92,25 @@ export function GroupForm({
             error={errors.courseId?.[0]}
           />
         </div>
-        <p className="form-hint">{t('Все ученики группы учатся на одном курсе.')}</p>
-        {
-          <button className="button secondary full" type="button" onClick={onCreateCourse}>
-            <Plus size={17} />
-            {t('Добавить курс')}
-          </button>
-        }
         {error && (
           <p className="error-message" role="alert">
             {t(error)}
           </p>
         )}
-        <button className="button primary full" type="submit" disabled={busy || !courses.length}>
-          {busy ? <Spinner /> : <Check size={18} />}
-          {t(busy ? 'Сохраняем…' : 'Создать группу')}
-        </button>
+        <div className="form-actions">
+          <button className="button primary" type="submit" disabled={busy || !courses.length}>
+            {busy ? <Spinner /> : <Check size={18} />}
+            {t(busy ? 'Сохраняем…' : 'Создать группу')}
+          </button>
+          <button
+            className="button secondary round-action"
+            type="button"
+            onClick={onCreateCourse}
+            aria-label={t('Добавить курс')}
+          >
+            <Plus size={20} />
+          </button>
+        </div>
       </fieldset>
     </form>
   );
