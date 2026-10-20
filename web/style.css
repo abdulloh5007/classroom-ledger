@@ -2240,3 +2240,8 @@ html.theme-revealing::view-transition-old(root) {
 .wallet-group-name:not(:has(.group-edit-button)) .hero-group-copy {
   max-width: 100%;
 }
+
+.field input[readonly] {
+  color: var(--muted);
+  cursor: default;
+}

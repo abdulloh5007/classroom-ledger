@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { Check, Plus, Trash2 } from 'lucide-react';
 import { groupPatchSchema, groupSchema, type Course, type Group } from '../src/contracts';
 import { api, ApiError } from './api';
-import { AmountField, ConfirmDelete, Spinner, StudentSelect } from './components';
+import { AmountField, ConfirmDelete, Spinner, StudentSelect, Tip } from './components';
 import { useI18n } from './i18n';
 
 export type GroupDraft = { name: string; courseId: string };
@@ -127,7 +127,6 @@ export function GroupEditor({
 }) {
   const { t } = useI18n();
   const [name, setName] = useState(group.name);
-  const [courseName, setCourseName] = useState(group.courseName);
   const [amount, setAmount] = useState(moneyInput(group.monthlyAmount, group.currency));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -138,7 +137,6 @@ export function GroupEditor({
     if (busy) return;
     const parsed = groupPatchSchema.safeParse({
       name,
-      courseName,
       monthlyAmount: parseMoneyInput(amount, group.currency),
     });
     if (!parsed.success) {
@@ -176,43 +174,30 @@ export function GroupEditor({
     <>
       <form className="form" onSubmit={submit} noValidate aria-busy={busy}>
         <fieldset disabled={busy}>
-          {[
-            {
-              id: 'edit-group-name',
-              key: 'name',
-              label: t('Название группы'),
-              value: name,
-              onChange: setName,
-            },
-            {
-              id: 'edit-course-name',
-              key: 'courseName',
-              label: t('Название курса'),
-              value: courseName,
-              onChange: setCourseName,
-            },
-          ].map((field) => (
-            <label className="field" key={field.id} htmlFor={field.id}>
-              <span>{field.label}</span>
-              <input
-                id={field.id}
-                value={field.value}
-                maxLength={80}
-                required
-                onChange={(event) => {
-                  field.onChange(event.target.value);
-                  setErrors({});
-                }}
-                aria-invalid={Boolean(errors[field.key])}
-                aria-describedby={errors[field.key] ? `${field.id}-error` : undefined}
-              />
-              {errors[field.key] && (
-                <span className="field-error" id={`${field.id}-error`}>
-                  {t(errors[field.key]![0]!)}
-                </span>
-              )}
-            </label>
-          ))}
+          <label className="field" htmlFor="edit-group-name">
+            <span>{t('Название группы')}</span>
+            <input
+              id="edit-group-name"
+              value={name}
+              maxLength={80}
+              required
+              onChange={(event) => {
+                setName(event.target.value);
+                setErrors({});
+              }}
+              aria-invalid={Boolean(errors.name)}
+              aria-describedby={errors.name ? 'edit-group-name-error' : undefined}
+            />
+            {errors.name && (
+              <span className="field-error" id="edit-group-name-error">
+                {t(errors.name[0]!)}
+              </span>
+            )}
+          </label>
+          <label className="field" htmlFor="edit-course-name">
+            <span>{t('Название курса')}</span>
+            <input id="edit-course-name" value={group.courseName} readOnly />
+          </label>
           <AmountField
             id="edit-group-amount"
             label={t('Оплата в месяц')}
@@ -230,22 +215,26 @@ export function GroupEditor({
               {t(error)}
             </p>
           )}
-          <button className="button primary full" type="submit" disabled={busy}>
-            {busy ? <Spinner /> : <Check size={18} />}
-            {t('Сохранить изменения')}
-          </button>
-          <button
-            className="button secondary full danger-text"
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setError('');
-              setConfirm(true);
-            }}
-          >
-            <Trash2 size={17} />
-            {t('Удалить группу')}
-          </button>
+          <div className="form-actions">
+            <button className="button primary" type="submit" disabled={busy}>
+              {busy ? <Spinner /> : <Check size={18} />}
+              {t('Сохранить изменения')}
+            </button>
+            <Tip label={t('Удалить группу')}>
+              <button
+                className="button secondary round-action danger-text"
+                type="button"
+                aria-label={t('Удалить группу')}
+                disabled={busy}
+                onClick={() => {
+                  setError('');
+                  setConfirm(true);
+                }}
+              >
+                <Trash2 size={18} />
+              </button>
+            </Tip>
+          </div>
         </fieldset>
       </form>
       <ConfirmDelete
