@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Update } from 'grammy/types';
 import type Database from 'better-sqlite3';
 import { openDatabase } from '../src/db/index.js';
@@ -78,7 +79,11 @@ beforeEach(() => {
     return { ok: true, result } as Awaited<ReturnType<typeof previous<typeof method>>>;
   });
 });
-afterEach(() => db.close());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+  db.close();
+});
 describe('Telegram handlers with mocked API transport', () => {
   it('приветствует гостя и показывает его ID моноширинным текстом', async () => {
     await bot.handleUpdate(message(outsider, '/start'));
@@ -98,7 +103,9 @@ describe('Telegram handlers with mocked API transport', () => {
     const text = String(calls.find((call) => call.method === 'sendMessage')?.payload.text);
     expect(text).toContain(`<code>${owner}</code>`);
     expect(text).toContain('Владелец');
-    expect(text).toContain('/pay');
+    expect(
+      JSON.stringify(calls.find((call) => call.method === 'sendMessage')?.payload.reply_markup),
+    ).toContain('nav:pay');
   });
   it('экранирует имя в публичном приветствии', async () => {
     const update = message(outsider, '/start');
@@ -195,7 +202,7 @@ describe('Telegram handlers with mocked API transport', () => {
   });
 });
 
-it('принимает доллары в /pay, сохраняет целые центы и разделяет итог задолженности по валютам', async () => {
+it('запрещает USD в боте, сохраняет просмотр валют и не ограничивает общий сервис', async () => {
   const usd = service.createCourse({ name: 'USD', currency: 'USD', monthlyAmount: 12550 });
   const student = service.createStudent({
     name: 'Dollar student',
@@ -209,10 +216,12 @@ it('принимает доллары в /pay, сохраняет целые ц�
     monthlyAmount: 100000,
   });
   await bot.handleUpdate(message(owner, `/pay ${student.id} 25,25`));
-  expect(service.payments(student.id)[0]?.amount).toBe(2525);
+  expect(service.payments(student.id)).toHaveLength(0);
   expect(
     String([...calls].reverse().find((call) => call.method === 'sendMessage')?.payload.text),
-  ).toContain('25,25 $');
+  ).toContain('только в сумах');
+  const { today } = await import('../src/calendar');
+  service.addPayment(student.id, { amount: 2525, date: today() });
   await bot.handleUpdate(message(owner, '/debt'));
   const text = String(
     [...calls].reverse().find((call) => call.method === 'sendMessage')?.payload.text,
@@ -227,7 +236,7 @@ it('публичная /about называет автора и не раскры
   await bot.handleUpdate(message(outsider, '/about'));
   const text = String(calls.find((call) => call.method === 'sendMessage')?.payload.text);
   expect(text).toContain('Abdulloh Ergashev');
-  expect(text).toContain('v1.1.0');
+  expect(text).toMatch(/v\d+\.\d+\.\d+/);
   expect(text).not.toContain('Private course');
   await bot.handleUpdate(message(outsider, '/groups'));
   expect(String(calls.at(-1)?.payload.text)).toContain('только владельцу');
@@ -303,7 +312,7 @@ it('бот показывает исторический тариф текуще
   expect(String(calls.at(-1)?.payload.text)).not.toContain('200 000 сум');
 });
 
-it('USD-карточка ученика и квитанция содержат группу, курс, точную сумму и остаток', async () => {
+it('USD-карточка доступна для просмотра, оплата командой заблокирована', async () => {
   const course = service.createCourse({
     name: 'English USD',
     currency: 'USD',
@@ -321,11 +330,9 @@ it('USD-карточка ученика и квитанция содержат �
   expect(String(calls.at(-1)?.payload.text)).toContain('125,50 $');
   await bot.handleUpdate(message(owner, `/pay ${student.id} 25,25`));
   const text = String(calls.at(-1)?.payload.text);
-  expect(text).toContain('Evening');
-  expect(text).toContain('English USD');
-  expect(text).toContain('25,25 $');
-  expect(text).toContain('100,25 $');
-  expect(service.payments(student.id)).toHaveLength(1);
+  expect(text).toContain('только в сумах');
+  expect(text).toContain('на сайте');
+  expect(service.payments(student.id)).toHaveLength(0);
 });
 
 it('полностью оплатившему ученику не предлагает новую оплату', async () => {
@@ -354,4 +361,218 @@ it('длинные HTML-имена в справочниках экраниру�
     expect(text.length).toBeLessThanOrEqual(4096);
     expect(text).toContain('&quot;');
   }
+});
+
+const keyboardSchema = z.object({
+  inline_keyboard: z.array(
+    z.array(z.object({ text: z.string(), callback_data: z.string().optional() })),
+  ),
+});
+function lastButtons() {
+  const call = [...calls]
+    .reverse()
+    .find(
+      (call) =>
+        (call.method === 'sendMessage' || call.method === 'editMessageText') &&
+        call.payload.reply_markup,
+    );
+  return keyboardSchema.parse(call?.payload.reply_markup).inline_keyboard.flat();
+}
+function action(prefix: string): string {
+  const value = lastButtons().find((button) =>
+    button.callback_data?.startsWith(prefix),
+  )?.callback_data;
+  expect(value, `Missing ${prefix} in ${JSON.stringify(lastButtons())}`).toBeDefined();
+  return value!;
+}
+function sumStudent() {
+  return service.createStudent({
+    name: 'Alice',
+    phone: '+998901234567',
+    group: 'Morning',
+    monthlyAmount: 500000,
+  });
+}
+it('полный путь кнопками: меню, группа, ученик, сумма, подтверждение и квитанция', async () => {
+  const student = sumStudent();
+  await bot.handleUpdate(message(owner, '/start'));
+  await bot.handleUpdate(callback(owner, action('nav:groups')));
+  await bot.handleUpdate(callback(owner, action(`group:${student.groupId}`)));
+  await bot.handleUpdate(callback(owner, action('view:students:')));
+  await bot.handleUpdate(callback(owner, action(`profile:${student.id}:`)));
+  await bot.handleUpdate(callback(owner, action(`student:${student.id}:`)));
+  await bot.handleUpdate(callback(owner, action('pay:')));
+  expect(service.payments(student.id)).toHaveLength(0);
+  expect(String(calls.at(-1)?.payload.text)).toContain('Подтвердите оплату');
+  const confirm = action('confirm:');
+  await bot.handleUpdate(callback(owner, confirm));
+  expect(service.payments(student.id)).toHaveLength(1);
+  expect(calls.some((call) => String(call.payload.text).includes('Оплата внесена'))).toBe(true);
+  await bot.handleUpdate(callback(owner, confirm));
+  expect(service.payments(student.id)).toHaveLength(1);
+  expect(calls.at(-1)?.payload.show_alert).toBe(true);
+});
+it('назад от подтверждения и отмена делают старую кнопку оплаты недействительной', async () => {
+  const student = sumStudent();
+  await bot.handleUpdate(callback(owner, `student:${student.id}`));
+  await bot.handleUpdate(callback(owner, action('pay:')));
+  const oldConfirm = action('confirm:');
+  await bot.handleUpdate(callback(owner, action('amount:')));
+  const freshPreset = action('pay:');
+  await bot.handleUpdate(callback(owner, oldConfirm));
+  expect(service.payments(student.id)).toHaveLength(0);
+  await bot.handleUpdate(callback(owner, freshPreset));
+  const newConfirm = action('confirm:');
+  await bot.handleUpdate(callback(owner, action('nav:cancel')));
+  await bot.handleUpdate(callback(owner, newConfirm));
+  expect(service.payments(student.id)).toHaveLength(0);
+});
+it('ручная сумма проверяется, не записывается до подтверждения и позволяет вернуться', async () => {
+  const student = sumStudent();
+  await bot.handleUpdate(callback(owner, `student:${student.id}`));
+  await bot.handleUpdate(callback(owner, action('manual:')));
+  const back = action('amount:');
+  for (const invalid of ['25,50', '500001', '0', '-1']) {
+    await bot.handleUpdate(message(owner, invalid));
+    expect(service.payments(student.id)).toHaveLength(0);
+    expect(String(calls.at(-1)?.payload.text)).toContain('Проверьте действие');
+  }
+  await bot.handleUpdate(callback(owner, back));
+  await bot.handleUpdate(callback(owner, action('manual:')));
+  await bot.handleUpdate(message(owner, '250 000'));
+  expect(service.payments(student.id)).toHaveLength(0);
+  expect(String(calls.at(-1)?.payload.text)).toContain('250 000 сум');
+  await bot.handleUpdate(callback(owner, action('confirm:')));
+  expect(service.payments(student.id)).toHaveLength(1);
+  expect(service.payments(student.id)[0]?.amount).toBe(250000);
+});
+it.each(['confirm', 'manual'] as const)(
+  'смена валюты ученика на USD блокирует уже открытый шаг %s',
+  async (step) => {
+    const student = sumStudent();
+    const usd = service.createCourse({ name: 'USD', currency: 'USD', monthlyAmount: 10000 });
+    const group = service.createGroup({ name: 'USD group', courseId: usd.id });
+    await bot.handleUpdate(callback(owner, `student:${student.id}`));
+    if (step === 'confirm') await bot.handleUpdate(callback(owner, action('pay:')));
+    else await bot.handleUpdate(callback(owner, action('manual:')));
+    const confirm = step === 'confirm' ? action('confirm:') : undefined;
+    service.updateStudent(student.id, { groupId: group.id });
+    if (confirm) await bot.handleUpdate(callback(owner, confirm));
+    else await bot.handleUpdate(message(owner, '1000'));
+    expect(service.payments(student.id)).toHaveLength(0);
+    expect(String(calls.at(-1)?.payload.text)).toContain('только в сумах');
+  },
+);
+it('оплата показывает только UZS, USD-группа не имеет кнопки записи платежа', async () => {
+  const uzs = sumStudent();
+  const course = service.createCourse({ name: 'USD', currency: 'USD', monthlyAmount: 10000 });
+  const group = service.createGroup({ name: 'Dollars', courseId: course.id });
+  const usd = service.createStudent({
+    name: 'Dollar student',
+    phone: '+998901234567',
+    groupId: group.id,
+  });
+  await bot.handleUpdate(message(owner, '/pay'));
+  expect(String(calls.at(-1)?.payload.text)).toContain(uzs.name);
+  expect(String(calls.at(-1)?.payload.text)).not.toContain(usd.name);
+  await bot.handleUpdate(callback(owner, `group:${group.id}`));
+  expect(lastButtons().some((button) => button.callback_data?.startsWith('view:pay:'))).toBe(false);
+  await bot.handleUpdate(callback(owner, `student:${usd.id}`));
+  expect(
+    lastButtons().some((button) =>
+      /^(pay|manual|student|confirm):/.test(button.callback_data ?? ''),
+    ),
+  ).toBe(false);
+  for (const amount of ['1000', '25,50'])
+    await bot.handleUpdate(message(owner, `/pay ${usd.id} ${amount}`));
+  expect(service.payments(usd.id)).toHaveLength(0);
+});
+it('карточка и шаг суммы сохраняют месяц, страницу и группу для возврата', async () => {
+  const student = sumStudent();
+  for (let index = 0; index < 7; index++)
+    service.createStudent({
+      name: `Student ${index}`,
+      phone: '+998901234567',
+      groupId: student.groupId,
+    });
+  const back = `debt:2026-09:1:${student.groupId}`;
+  await bot.handleUpdate(callback(owner, back));
+  const profile = action('profile:');
+  await bot.handleUpdate(callback(owner, profile));
+  expect(lastButtons().some((button) => button.callback_data === back)).toBe(true);
+  await bot.handleUpdate(callback(owner, action('student:')));
+  expect(lastButtons().some((button) => button.callback_data === profile)).toBe(true);
+  await bot.handleUpdate(callback(owner, profile));
+  await bot.handleUpdate(callback(owner, back));
+  expect(String(calls.at(-1)?.payload.text)).toContain('2026-09');
+  expect(String(calls.at(-1)?.payload.text)).toContain('Страница 2/2');
+});
+it('гостю доступны кнопки профиля/помощи, подделанная финансовая кнопка запрещена', async () => {
+  await bot.handleUpdate(message(outsider, '/start'));
+  expect(lastButtons().some((button) => button.callback_data === 'nav:pay')).toBe(false);
+  await bot.handleUpdate(callback(outsider, 'nav:help'));
+  expect(String(calls.at(-1)?.payload.text)).toContain('Как пользоваться');
+  await bot.handleUpdate(callback(outsider, 'nav:pay'));
+  expect(calls.at(-1)?.method).toBe('answerCallbackQuery');
+  expect(calls.at(-1)?.payload.show_alert).toBe(true);
+});
+it('администратор может вернуться с выбора пользователя кнопкой и отменённый ввод не выдаёт доступ', async () => {
+  await bot.handleUpdate(callback(owner, 'admin:add'));
+  const request = JSON.stringify(calls.at(-1)?.payload.reply_markup);
+  expect(request).toContain('request_users');
+  expect(request).toContain('К администраторам');
+  await bot.handleUpdate(message(owner, '‹ К администраторам'));
+  expect(String(calls.at(-1)?.payload.text)).toContain('Администраторы');
+  expect(
+    calls.some((call) =>
+      String(JSON.stringify(call.payload.reply_markup)).includes('remove_keyboard'),
+    ),
+  ).toBe(true);
+  await bot.handleUpdate(message(owner, '789'));
+  expect(service.canAccess(789)).toBe(false);
+});
+it('устаревшее подтверждение через 15 минут не записывает оплату', async () => {
+  const student = sumStudent();
+  await bot.handleUpdate(callback(owner, `student:${student.id}`));
+  await bot.handleUpdate(callback(owner, action('pay:')));
+  const confirm = action('confirm:');
+  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 16 * 60_000);
+  await bot.handleUpdate(callback(owner, confirm));
+  expect(service.payments(student.id)).toHaveLength(0);
+  expect(calls.at(-1)?.payload.show_alert).toBe(true);
+});
+it('сообщения сценариев оформлены HTML, callback_data укладывается в Telegram 64 байта', async () => {
+  const student = sumStudent();
+  for (const text of ['/start', '/help', '/about', '/groups', '/students', '/debt'])
+    await bot.handleUpdate(message(owner, text));
+  await bot.handleUpdate(callback(owner, `student:${student.id}`));
+  await bot.handleUpdate(callback(owner, action('manual:')));
+  await bot.handleUpdate(message(owner, '0'));
+  await bot.handleUpdate(message(owner, '100000'));
+  await bot.handleUpdate(callback(owner, action('nav:cancel')));
+  for (const call of calls.filter(
+    (call) => call.method === 'sendMessage' || call.method === 'editMessageText',
+  )) {
+    expect(call.payload.parse_mode).toBe('HTML');
+    expect(String(call.payload.text)).toContain('<b>');
+    const parsed = keyboardSchema.safeParse(call.payload.reply_markup);
+    if (parsed.success)
+      for (const button of parsed.data.inline_keyboard.flat())
+        if (button.callback_data)
+          expect(Buffer.byteLength(button.callback_data)).toBeLessThanOrEqual(64);
+  }
+});
+
+it('переход через полночь требует нового подтверждения даты без записи платежа', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-20T18:59:00Z'));
+  const student = sumStudent();
+  await bot.handleUpdate(callback(owner, `student:${student.id}`));
+  await bot.handleUpdate(callback(owner, action('pay:')));
+  const confirm = action('confirm:');
+  expect(String(calls.at(-1)?.payload.text)).toContain('2026-10-20');
+  vi.setSystemTime(new Date('2026-10-20T19:01:00Z'));
+  await bot.handleUpdate(callback(owner, confirm));
+  expect(service.payments(student.id)).toHaveLength(0);
+  expect(String(calls.at(-1)?.payload.text)).toContain('Дата изменилась');
 });
