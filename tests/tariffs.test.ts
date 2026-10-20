@@ -167,3 +167,12 @@ it('миграция v6 сохраняет записи, а версии тар�
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+it('тариф курса доступен без учеников и сохраняет текущую цену после правки', () => {
+  const course = service.createCourse({ name: 'Empty course', monthlyAmount: 100000 });
+  service.updateCourse(course.id, { monthlyAmount: 200000 });
+  expect(service.courseTariff(course.id, currentMonth())).toBe(100000);
+  expect(service.courseTariff(course.id, shiftMonth(currentMonth(), 1))).toBe(200000);
+  expect(() => service.courseTariff(course.id, '2026-99')).toThrow();
+  expect(() => service.courseTariff(99999)).toThrow('Курс не найден');
+});

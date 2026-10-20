@@ -36,7 +36,8 @@ if (!production) {
     prefix: '/',
     index: ['index.html'],
   });
-  app.get('/login', async (_request, reply) => reply.sendFile('index.html'));
+  for (const path of ['/login', '/about'])
+    app.get(path, async (_request, reply) => reply.sendFile('index.html'));
 }
 async function freePort(preferred: number): Promise<number> {
   for (let port = preferred; port <= Math.min(preferred + 50, 65535); port++) {

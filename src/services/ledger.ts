@@ -363,14 +363,19 @@ export class LedgerService {
       )
       .get(student.id, start, end) as { paid: number };
     this.assertSafe(paid);
+    return { paid, debt: Math.max(0, this.courseTariff(student.courseId, month) - paid) };
+  }
+  courseTariff(rawCourseId: unknown, month = currentMonth()): number {
+    const course = this.course(rawCourseId);
+    monthRange(month);
     const tariff = this.db
       .prepare(
-        `SELECT monthly_amount AS amount FROM course_tariffs
-      WHERE course_id=? AND effective_month<=? ORDER BY effective_month DESC LIMIT 1`,
+        `SELECT monthly_amount AS amount FROM course_tariffs WHERE course_id=? AND effective_month<=? ORDER BY effective_month DESC LIMIT 1`,
       )
-      .get(student.courseId, month) as { amount: number } | undefined;
-    return { paid, debt: Math.max(0, (tariff?.amount ?? student.monthlyAmount) - paid) };
+      .get(course.id, month) as { amount: number } | undefined;
+    return tariff?.amount ?? course.monthlyAmount;
   }
+
   debtors(month = currentMonth(), groupId?: unknown): Debtor[] {
     return this.monthlyBalances(month, groupId).filter((row) => row.debt > 0);
   }

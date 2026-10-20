@@ -1686,7 +1686,7 @@ html.theme-revealing::view-transition-old(root) {
 .filter-popover button[aria-checked='true'] {
   background: var(--subtle);
 }
-.filter-popover button span {
+.filter-popover:not(.group-menu) button > span {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1838,6 +1838,7 @@ html.theme-revealing::view-transition-old(root) {
   min-height: 48px;
 }
 .group-menu button .group-menu-item {
+  display: flex;
   flex-direction: row;
   align-items: center;
   gap: 12px;
@@ -1849,7 +1850,7 @@ html.theme-revealing::view-transition-old(root) {
   user-select: none;
 }
 .group-menu-list {
-  max-height: min(360px, calc(var(--radix-popover-content-available-height, 540px) - 80px));
+  max-height: min(360px, calc(var(--radix-popover-content-available-height, 540px) - 128px));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -1923,6 +1924,8 @@ html.theme-revealing::view-transition-old(root) {
 }
 .marquee-track {
   display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   width: max-content;
   gap: 32px;
 }
@@ -2245,4 +2248,168 @@ html.theme-revealing::view-transition-old(root) {
 .field input[readonly] {
   color: var(--muted);
   cursor: default;
+}
+
+.group-menu-about {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border-radius: 15px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.group-menu-about:hover,
+.group-menu-about:focus-visible {
+  background: var(--hover);
+  color: var(--ink);
+}
+.about-page {
+  max-width: 720px;
+  margin: auto;
+  padding: 0 20px calc(110px + env(safe-area-inset-bottom));
+}
+.about-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: calc(68px + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.about-header > span:first-of-type {
+  font-weight: 500;
+}
+.about-version {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+.about-intro {
+  padding: 36px 0 28px;
+}
+.about-intro h1 {
+  margin-top: 18px;
+  font-size: 42px;
+  letter-spacing: -1.6px;
+}
+.about-intro > p {
+  margin-top: 12px;
+  max-width: 500px;
+  font-size: 18px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.about-author {
+  display: grid;
+  gap: 5px;
+  margin-top: 24px;
+  font-size: 14px;
+}
+.about-author > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.about-links {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+.about-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 12px;
+}
+.about-nav a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 13px;
+  background: var(--surface);
+}
+.about-section {
+  margin-top: 18px;
+  padding: 22px;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 24px;
+  scroll-margin-top: 90px;
+  overflow: hidden;
+}
+.about-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 19px;
+  line-height: 1.4;
+}
+.about-section p,
+.about-section li,
+.about-section dd {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.about-section p {
+  margin-top: 14px;
+}
+.about-section ul {
+  padding-left: 18px;
+  margin-top: 14px;
+}
+.about-section li + li {
+  margin-top: 9px;
+}
+.about-section a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.about-section code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.about-section pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  line-height: 1.8;
+}
+.about-commands > div,
+.about-api > div {
+  padding-block: 15px;
+  border-bottom: 1px solid var(--panel-line);
+}
+.about-commands > div:last-child,
+.about-api > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.about-commands dd {
+  margin: 5px 0 0;
+}
+.about-api p {
+  margin-top: 5px;
+}
+@media (max-width: 400px) {
+  .about-page {
+    padding-inline: 16px;
+  }
+  .about-section {
+    padding: 18px;
+  }
 }

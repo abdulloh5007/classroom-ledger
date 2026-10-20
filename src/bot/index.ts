@@ -1,3 +1,5 @@
+import { project } from '../project.js';
+import { monthSchema, type Group } from '../contracts.js';
 import { randomBytes, randomInt } from 'node:crypto';
 import { Bot, GrammyError, InlineKeyboard, Keyboard, type Context } from 'grammy';
 import { ZodError } from 'zod';
@@ -14,10 +16,13 @@ const short = (value: string, size = 60): string => html(value.slice(0, size));
 const publicCommands = [
   { command: 'start', description: 'Приветствие и мой Telegram ID' },
   { command: 'help', description: 'Как пользоваться ботом' },
+  { command: 'about', description: 'О проекте и авторе' },
 ];
 const commands = [
   { command: 'start', description: 'Открыть учёт оплат' },
   { command: 'help', description: 'Справка' },
+  { command: 'about', description: 'О проекте и авторе' },
+  { command: 'groups', description: 'Выбрать группу и посмотреть сводку' },
   { command: 'debt', description: 'Должники по месяцам' },
   { command: 'pay', description: 'Внести оплату' },
   { command: 'students', description: 'Список учеников' },
@@ -31,6 +36,7 @@ type Pending = { expires: number } & (
 export function createBot(token: string, service: LedgerService) {
   const bot = new Bot(token, { client: { timeoutSeconds: 35 } });
   const pending = new Map<number, Pending>();
+  const selectedGroups = new Map<number, number>();
   let stopped = false;
   const htmlOptions = { parse_mode: 'HTML' } as const;
   const state = (id: number): Pending | undefined => {
@@ -70,7 +76,13 @@ export function createBot(token: string, service: LedgerService) {
     }
   });
   const help =
-    '<b>Что можно сделать</b>\n\n/debt — задолженность по месяцам\n/pay — внести оплату по шагам\n/pay <code>12 250000</code> — быстрая оплата\n/students — ученики и их ID\n/cancel — отменить ввод\n\n<blockquote>Суммы — целые, в сумах. Дата определяется по времени Ташкента.</blockquote>';
+    '<b>Что можно сделать</b>\n\n/groups — выбрать группу или все группы\n/debt — задолженность по месяцам\n/students — ученики, группы, курсы и ID\n/pay — внести оплату по шагам\n/pay <code>12 250000</code> — быстрая оплата по ID\n/about — о проекте и авторе\n/cancel — отменить ввод\n\n<blockquote>UZS: целые суммы в сумах. USD: доллары, например <code>/pay 12 25,50</code>. Валюты не смешиваются. Дата — по Ташкенту. Новый тариф действует со следующего месяца, история сохраняется.</blockquote>\n\nГруппы, курсы и ученики создаются и изменяются на сайте. Выбор группы действует для /debt, /students и пошаговой /pay; оплата по ID не зависит от фильтра. После перезапуска выбраны все группы.';
+  bot.command('about', async (ctx) => {
+    await ctx.reply(
+      `<b>${project.name} · v${project.version}</b>\nУчёт оплат учебного центра.\n\nАвтор: <b>${html(project.author)}</b>\nБраузер и Telegram работают с общей базой и сервисом. Группы привязаны к курсам; поддерживаются UZS/USD, месячные тарифы и история платежей.\n\n<blockquote>Бот: выбор группы, должники по месяцам, ученики, приём оплат и управление доступом владельцем. Создание справочников — в веб-интерфейсе. Полная справка сайта находится на странице /about.</blockquote>\n\n/start — профиль и доступ\n/help — команды`,
+      htmlOptions,
+    );
+  });
   // Welcome and identification are public. Financial handlers remain behind the access guard.
   bot.command(['start', 'help'], async (ctx) => {
     const user = ctx.from;
@@ -113,26 +125,23 @@ export function createBot(token: string, service: LedgerService) {
     await ctx.reply('Ввод отменён.', { reply_markup: { remove_keyboard: true } });
   });
 
-  function debtPage(month: string, rawPage = 0) {
-    const rows = service.debtors(month);
-    const pages = Math.max(1, Math.ceil(rows.length / 4));
-    const page = Math.max(0, Math.min(rawPage, pages - 1));
-    const entries = rows
-      .slice(page * 4, page * 4 + 4)
-      .map(
-        (row) =>
-          `<b>${short(row.name, 50)}</b> · <code>#${row.studentId}</code>\n${short(row.group, 30)} · оплачено <code>${formatMoney(row.paid, row.currency)}</code>\nДолг: <code>${formatMoney(row.debt, row.currency)}</code>`,
-      )
-      .join('\n\n');
-    const keyboard = new InlineKeyboard();
-    if (month !== '1900-01') keyboard.text('‹ Пред.', `debt:${shiftMonth(month, -1)}:0`).primary();
-    if (month !== '9999-11') keyboard.text('След. ›', `debt:${shiftMonth(month, 1)}:0`).primary();
-    if (pages > 1) {
-      keyboard.row();
-      if (page > 0) keyboard.text('↑ Назад', `debt:${month}:${page - 1}`);
-      if (page < pages - 1) keyboard.text('Ещё ↓', `debt:${month}:${page + 1}`);
+  function selectedGroup(userId: number): number | undefined {
+    const id = selectedGroups.get(userId);
+    if (id && !service.groups().some((group) => group.id === id)) {
+      selectedGroups.delete(userId);
+      return undefined;
     }
-    const totals =
+    return id;
+  }
+  const scope = (id?: number) => (id === undefined ? 'all' : String(id));
+  function groupFromScope(value: string | undefined): number | undefined {
+    return value && value !== 'all' ? service.group(Number(value)).id : undefined;
+  }
+  function contextLine(group: Group, size = 24): string {
+    return `Группа: <b>${short(group.name, size)}</b> · Курс: <b>${short(group.courseName, size)}</b>`;
+  }
+  function totals(rows: { currency: 'UZS' | 'USD'; debt: number }[]): string {
+    return (
       [...new Set(rows.map((row) => row.currency))]
         .map((currency) =>
           formatMoney(
@@ -140,28 +149,121 @@ export function createBot(token: string, service: LedgerService) {
             currency,
           ),
         )
-        .join(' + ') || formatMoney(0);
-    return {
-      text: `<b>Задолженность · ${month}</b>\n\n${entries ? `<blockquote expandable>${entries}</blockquote>` : '✓ Все оплаты внесены. Должников нет.'}\n\nИтого: <code>${totals}</code>\nУчеников: ${rows.length} · Страница ${page + 1}/${pages}`,
-      reply_markup: keyboard,
-    };
+        .join(' + ') || '0'
+    );
   }
-  bot.command('debt', async (ctx) => {
-    const page = debtPage(currentMonth());
-    await ctx.reply(page.text, { ...htmlOptions, reply_markup: page.reply_markup });
-  });
-  bot.callbackQuery(/^debt:(\d{4}-\d{2}):(\d+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const page = debtPage(ctx.match[1]!, Number(ctx.match[2]));
+  async function editPage(ctx: Context, text: string, keyboard: InlineKeyboard) {
     try {
-      await ctx.editMessageText(page.text, { ...htmlOptions, reply_markup: page.reply_markup });
+      await ctx.editMessageText(text, { ...htmlOptions, reply_markup: keyboard });
     } catch (error) {
       if (!(error instanceof GrammyError && error.description.includes('message is not modified')))
         throw error;
     }
+  }
+  function groupsPage(rawPage = 0) {
+    const groups = service.groups();
+    const pages = Math.max(1, Math.ceil(groups.length / 6));
+    const page = Math.max(0, Math.min(rawPage, pages - 1));
+    const keyboard = new InlineKeyboard().text('Все группы', 'group:all').primary().row();
+    for (const group of groups.slice(page * 6, page * 6 + 6))
+      keyboard
+        .text(`${group.name.slice(0, 35)} · #${group.id}`, `group:${group.id}`)
+        .primary()
+        .row();
+    if (page > 0) keyboard.text('‹ Назад', `groups:${page - 1}`);
+    if (page < pages - 1) keyboard.text('Далее ›', `groups:${page + 1}`);
+    const entries = groups
+      .slice(page * 6, page * 6 + 6)
+      .map(
+        (group) =>
+          `<b>${short(group.name, 26)}</b> · <code>#${group.id}</code>\nКурс: ${short(group.courseName, 26)}\nТариф за ${currentMonth()}: <code>${formatMoney(service.courseTariff(group.courseId), group.currency)}</code>\nУчеников: ${group.studentCount}`,
+      )
+      .join('\n\n');
+    return {
+      text: `<b>Выберите группу</b>\n\n${entries || 'Групп пока нет. Создайте группу на сайте.'}\n\nСтраница ${page + 1}/${pages}`,
+      keyboard,
+    };
+  }
+  function groupOverview(groupId?: number) {
+    const group = groupId === undefined ? undefined : service.group(groupId);
+    const rows = service.monthlyBalances(currentMonth(), groupId);
+    const keyboard = new InlineKeyboard()
+      .text('Должники', `view:debt:${scope(groupId)}`)
+      .primary()
+      .text('Ученики', `view:students:${scope(groupId)}`)
+      .row()
+      .text('Внести оплату', `view:pay:${scope(groupId)}`)
+      .success()
+      .row()
+      .text('‹ Группы', 'groups:0');
+    return {
+      text: `<b>${group ? 'Выбрана группа' : 'Все группы'}</b>\n\n${group ? `${contextLine(group, 80)}\nТариф за ${currentMonth()}: <code>${formatMoney(service.courseTariff(group.courseId), group.currency)}</code>\n` : ''}Учеников: ${rows.length}\nДолжники: ${rows.filter((row) => row.debt > 0).length} / ${rows.length}\nОсталось собрать: <code>${totals(rows)}</code>\n\nВыбор применяется к спискам и пошаговой оплате.`,
+      keyboard,
+    };
+  }
+  bot.command('groups', async (ctx) => {
+    pending.delete(ctx.from!.id);
+    const page = groupsPage();
+    await ctx.reply(page.text, { ...htmlOptions, reply_markup: page.keyboard });
   });
-  function studentsPage(rawPage: number, choose: boolean) {
-    const students = service.students();
+  bot.callbackQuery(/^groups:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const page = groupsPage(Number(ctx.match[1]));
+    await editPage(ctx, page.text, page.keyboard);
+  });
+  bot.callbackQuery(/^group:(all|\d+)$/, async (ctx) => {
+    const id = groupFromScope(ctx.match[1]);
+    if (id === undefined) selectedGroups.delete(ctx.from!.id);
+    else selectedGroups.set(ctx.from!.id, id);
+    pending.delete(ctx.from!.id);
+    await ctx.answerCallbackQuery();
+    const page = groupOverview(id);
+    await editPage(ctx, page.text, page.keyboard);
+  });
+  function debtPage(month: string, rawPage = 0, groupId?: number) {
+    monthSchema.parse(month);
+    const group = groupId === undefined ? undefined : service.group(groupId);
+    const future = month > currentMonth();
+    const rows = future ? [] : service.debtors(month, groupId);
+    const pages = Math.max(1, Math.ceil(rows.length / 4));
+    const page = Math.max(0, Math.min(rawPage, pages - 1));
+    const entries = rows
+      .slice(page * 4, page * 4 + 4)
+      .map((row) => {
+        const student = service.student(row.studentId);
+        const studentGroup = group ?? service.group(student.groupId);
+        return `<b>${short(row.name, 40)}</b> · <code>#${row.studentId}</code>\n${contextLine(studentGroup)}\nТариф: <code>${formatMoney(row.monthlyAmount, row.currency)}</code> · оплачено <code>${formatMoney(row.paid, row.currency)}</code>\nДолг: <code>${formatMoney(row.debt, row.currency)}</code>`;
+      })
+      .join('\n\n');
+    const keyboard = new InlineKeyboard();
+    if (month !== '1900-01')
+      keyboard.text('‹ Пред.', `debt:${shiftMonth(month, -1)}:0:${scope(groupId)}`).primary();
+    if (month !== '9999-11')
+      keyboard.text('След. ›', `debt:${shiftMonth(month, 1)}:0:${scope(groupId)}`).primary();
+    if (pages > 1) {
+      keyboard.row();
+      if (page > 0) keyboard.text('↑ Назад', `debt:${month}:${page - 1}:${scope(groupId)}`);
+      if (page < pages - 1) keyboard.text('Ещё ↓', `debt:${month}:${page + 1}:${scope(groupId)}`);
+    }
+    keyboard.row().text('Группы', 'groups:0');
+    return {
+      text: `<b>Задолженность · ${month}</b>\n${group ? `Группа: <b>${short(group.name)}</b>` : 'Все группы'}\n\n${future ? 'Месяц ещё не начался. Данные: —' : entries ? `<blockquote expandable>${entries}</blockquote>` : '✓ Должников нет.'}\n\nИтого: <code>${future ? '—' : totals(rows)}</code>\nДолжников: ${future ? '—' : rows.length} · Страница ${page + 1}/${pages}`,
+      reply_markup: keyboard,
+    };
+  }
+  bot.command('debt', async (ctx) => {
+    pending.delete(ctx.from!.id);
+    const page = debtPage(currentMonth(), 0, selectedGroup(ctx.from!.id));
+    await ctx.reply(page.text, { ...htmlOptions, reply_markup: page.reply_markup });
+  });
+  bot.callbackQuery(/^debt:(\d{4}-\d{2}):(\d+)(?::(all|\d+))?$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const page = debtPage(ctx.match[1]!, Number(ctx.match[2]), groupFromScope(ctx.match[3]));
+    await editPage(ctx, page.text, page.reply_markup);
+  });
+  function studentsPage(rawPage: number, choose: boolean, groupId?: number) {
+    const group = groupId === undefined ? undefined : service.group(groupId);
+    const students = service.students(groupId);
     const page = Math.max(0, Math.min(rawPage, Math.max(0, Math.ceil(students.length / 6) - 1)));
     const selected = students.slice(page * 6, page * 6 + 6);
     const prefix = choose ? 'choose' : 'students';
@@ -169,32 +271,51 @@ export function createBot(token: string, service: LedgerService) {
     if (choose)
       for (const student of selected)
         keyboard
-          .text(`${student.name.slice(0, 50)} · #${student.id}`, `student:${student.id}`)
+          .text(`${student.name.slice(0, 40)} · #${student.id}`, `student:${student.id}`)
           .primary()
           .row();
-    if (page > 0) keyboard.text('‹ Назад', `${prefix}:${page - 1}`);
-    if ((page + 1) * 6 < students.length) keyboard.text('Далее ›', `${prefix}:${page + 1}`);
+    if (page > 0) keyboard.text('‹ Назад', `${prefix}:${page - 1}:${scope(groupId)}`);
+    if ((page + 1) * 6 < students.length)
+      keyboard.text('Далее ›', `${prefix}:${page + 1}:${scope(groupId)}`);
+    keyboard.row().text('Группы', 'groups:0');
     const list = selected
       .map(
         (student) =>
-          `<code>#${student.id}</code> <b>${short(student.name)}</b>\n${short(student.group, 35)} · <code>${formatMoney(student.monthlyAmount, student.currency)}</code>`,
+          `<code>#${student.id}</code> <b>${short(student.name, 40)}</b>\n${contextLine(group ?? service.group(student.groupId))}\nТариф за ${currentMonth()}: <code>${formatMoney(service.courseTariff(student.courseId), student.currency)}</code>`,
       )
       .join('\n\n');
     return {
-      text: students.length
-        ? `<b>${choose ? 'Выберите ученика' : 'Ученики'}</b>\n\n${list}\n\nВсего: ${students.length}`
-        : 'Учеников пока нет. Добавьте первого в веб-интерфейсе.',
+      text: `<b>${choose ? 'Выберите ученика' : 'Ученики'}</b> · ${group ? short(group.name, 40) : 'Все группы'}\n\n${list || 'Учеников пока нет. Добавьте их на сайте.'}\n\nВсего: ${students.length}`,
       keyboard,
     };
   }
   bot.command('students', async (ctx) => {
-    const page = studentsPage(0, false);
+    pending.delete(ctx.from!.id);
+    const page = studentsPage(0, false, selectedGroup(ctx.from!.id));
     await ctx.reply(page.text, { ...htmlOptions, reply_markup: page.keyboard });
   });
-  bot.callbackQuery(/^(students|choose):(\d+)$/, async (ctx) => {
+  bot.callbackQuery(/^(students|choose):(\d+)(?::(all|\d+))?$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    const page = studentsPage(Number(ctx.match[2]), ctx.match[1] === 'choose');
-    await ctx.editMessageText(page.text, { ...htmlOptions, reply_markup: page.keyboard });
+    const page = studentsPage(
+      Number(ctx.match[2]),
+      ctx.match[1] === 'choose',
+      groupFromScope(ctx.match[3]),
+    );
+    await editPage(ctx, page.text, page.keyboard);
+  });
+  bot.callbackQuery(/^view:(debt|students|pay):(all|\d+)$/, async (ctx) => {
+    const id = groupFromScope(ctx.match[2]);
+    if (id === undefined) selectedGroups.delete(ctx.from!.id);
+    else selectedGroups.set(ctx.from!.id, id);
+    pending.delete(ctx.from!.id);
+    await ctx.answerCallbackQuery();
+    if (ctx.match[1] === 'debt') {
+      const page = debtPage(currentMonth(), 0, id);
+      await editPage(ctx, page.text, page.reply_markup);
+    } else {
+      const page = studentsPage(0, ctx.match[1] === 'pay', id);
+      await editPage(ctx, page.text, page.keyboard);
+    }
   });
   async function pay(ctx: Context, studentId: number, amount: number, key: string) {
     const payment = service.addPayment(studentId, { amount, date: today() }, key);
@@ -202,7 +323,7 @@ export function createBot(token: string, service: LedgerService) {
     const { debt } = service.balance(student.id, payment.date.slice(0, 7));
     if (ctx.from) pending.delete(ctx.from!.id);
     await ctx.reply(
-      `<b>✓ Оплата внесена</b>\n\n<blockquote><b>${short(student.name)}</b>\nID: <code>${student.id}</code>\nСумма: <code>${formatMoney(payment.amount, student.currency)}</code>\nДата: <code>${payment.date}</code>\nОстаток долга: <code>${formatMoney(debt, student.currency)}</code></blockquote>`,
+      `<b>✓ Оплата внесена</b>\n\n<blockquote><b>${short(student.name)}</b>\nID: <code>${student.id}</code>\n${contextLine(service.group(student.groupId), 40)}\nМесяц: <code>${payment.date.slice(0, 7)}</code>\nСумма: <code>${formatMoney(payment.amount, student.currency)}</code>\nДата: <code>${payment.date}</code>\nОстаток долга: <code>${formatMoney(debt, student.currency)}</code></blockquote>`,
       { ...htmlOptions, reply_markup: { remove_keyboard: true } },
     );
   }
@@ -222,13 +343,21 @@ export function createBot(token: string, service: LedgerService) {
       );
       return;
     }
-    const page = studentsPage(0, true);
+    const page = studentsPage(0, true, selectedGroup(ctx.from!.id));
     await ctx.reply(page.text, { ...htmlOptions, reply_markup: page.keyboard });
   });
   bot.callbackQuery(/^student:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const student = service.student(Number(ctx.match[1]));
     const { debt } = service.balance(student.id);
+    if (debt === 0) {
+      await editPage(
+        ctx,
+        `<b>${short(student.name)}</b>\n${contextLine(service.group(student.groupId), 40)}\n\nЗа ${currentMonth()} всё оплачено. Остаток: <code>${formatMoney(0, student.currency)}</code>`,
+        new InlineKeyboard().text('‹ Ученики', `choose:0:${scope(student.groupId)}`),
+      );
+      return;
+    }
     const token = randomBytes(8).toString('hex');
     pending.set(ctx.from!.id, {
       kind: 'pay',
@@ -249,7 +378,7 @@ export function createBot(token: string, service: LedgerService) {
         .row();
     keyboard.text('✎ Ввести вручную', `manual:${token}`).primary();
     await ctx.editMessageText(
-      `<b>${short(student.name)}</b>\nДолг за ${currentMonth()}: <code>${formatMoney(debt, student.currency)}</code>\n\nВыберите сумму — нажатие сразу внесёт оплату.`,
+      `<b>${short(student.name)}</b> · <code>#${student.id}</code>\n${contextLine(service.group(student.groupId), 40)}\nТариф: <code>${formatMoney(service.courseTariff(student.courseId), student.currency)}</code>\nДолг за ${currentMonth()}: <code>${formatMoney(debt, student.currency)}</code>\n\nВыберите сумму — нажатие сразу внесёт оплату.`,
       { ...htmlOptions, reply_markup: keyboard },
     );
   });
@@ -336,6 +465,7 @@ export function createBot(token: string, service: LedgerService) {
         const id = Number(data.split(':')[2]);
         service.removeAdmin(ctx.from!.id, id);
         pending.delete(id);
+        selectedGroups.delete(id);
         try {
           await bot.api.deleteMyCommands({ scope: { type: 'chat', chat_id: id } });
         } catch {

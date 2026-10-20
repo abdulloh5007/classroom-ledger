@@ -1,3 +1,4 @@
+import { groupCaption } from './labels';
 import { Marquee } from './Marquee';
 import { useI18n } from './i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -361,7 +362,9 @@ export function App({
                               <span className="avatar">{initials(debtor.name)}</span>
                               <div className="student-info">
                                 <h3>{debtor.name}</h3>
-                                <Marquee text={`${debtor.group} • ${group?.courseName ?? ''}`} />
+                                <Marquee
+                                  text={groupCaption(debtor.group, group?.courseName ?? '')}
+                                />
                               </div>
                               <span className="student-id">#{debtor.studentId}</span>
                             </div>
@@ -506,7 +509,7 @@ export function App({
                               <div className="student-info">
                                 <h3>{student.name}</h3>
                                 <Marquee
-                                  text={`${student.group} • ${group?.courseName ?? ''} · #${student.id}`}
+                                  text={`${groupCaption(student.group, group?.courseName ?? '')} · #${student.id}`}
                                 />
                               </div>
                               <div className="student-fee">

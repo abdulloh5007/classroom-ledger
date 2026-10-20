@@ -1,3 +1,4 @@
+import { groupCaption } from './labels';
 import { moneyInput, parseMoneyInput } from '../src/money';
 import { useI18n } from './i18n';
 import { useEffect, useState, type FormEvent, type Dispatch, type SetStateAction } from 'react';
@@ -357,7 +358,7 @@ export function StudentForm({
             }}
             options={groups.map((group) => ({
               value: String(group.id),
-              label: `${group.name} • ${group.courseName}`,
+              label: groupCaption(group.name, group.courseName),
             }))}
             error={errors.groupId?.[0]}
           />

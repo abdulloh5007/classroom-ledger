@@ -6,6 +6,7 @@ import '@fontsource/geist/400.css';
 import '@fontsource/geist/500.css';
 import '@fontsource/geist/600.css';
 import './style.css';
+import { About } from './About';
 import { Auth } from './Auth';
 import { setLanguage } from './i18n';
 try {
@@ -35,7 +36,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <MotionConfig reducedMotion="user">
       <Tooltip.Provider delayDuration={350}>
-        <Auth />
+        {window.location.pathname === '/about' ? <About /> : <Auth />}
       </Tooltip.Provider>
     </MotionConfig>
   </React.StrictMode>,

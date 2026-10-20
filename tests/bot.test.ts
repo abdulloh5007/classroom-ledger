@@ -221,3 +221,137 @@ it('принимает доллары в /pay, сохраняет целые ц�
   expect(text).toContain('100 000 сум');
   expect(text).not.toContain('110 025');
 });
+
+it('публичная /about называет автора и не раскрывает справочники гостю', async () => {
+  service.createCourse({ name: 'Private course', monthlyAmount: 100000 });
+  await bot.handleUpdate(message(outsider, '/about'));
+  const text = String(calls.find((call) => call.method === 'sendMessage')?.payload.text);
+  expect(text).toContain('Abdulloh Ergashev');
+  expect(text).toContain('v1.1.0');
+  expect(text).not.toContain('Private course');
+  await bot.handleUpdate(message(outsider, '/groups'));
+  expect(String(calls.at(-1)?.payload.text)).toContain('только владельцу');
+});
+
+it('выбор группы ограничивает должников, учеников и пошаговую оплату', async () => {
+  const course = service.createCourse({ name: 'English', monthlyAmount: 100000 });
+  const morning = service.createGroup({ name: 'Morning', courseId: course.id });
+  const evening = service.createGroup({ name: 'Evening', courseId: course.id });
+  service.createStudent({ name: 'Alice', phone: '+998901234567', groupId: morning.id });
+  service.createStudent({ name: 'Bob', phone: '+998901234568', groupId: evening.id });
+  await bot.handleUpdate(callback(owner, `group:${morning.id}`));
+  expect(String(calls.at(-1)?.payload.text)).toContain('Morning');
+  expect(String(calls.at(-1)?.payload.text)).toContain('English');
+  for (const command of ['/debt', '/students', '/pay']) {
+    await bot.handleUpdate(message(owner, command));
+    const text = String(calls.at(-1)?.payload.text);
+    expect(text).toContain('Alice');
+    expect(text).not.toContain('Bob');
+    expect(text).toContain('English');
+  }
+  expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain('student:');
+});
+
+it('выбор группы личный; удалённая группа сбрасывает фильтр, старые кнопки получают понятную ошибку', async () => {
+  service.addAdmin(owner, outsider);
+  const course = service.createCourse({ name: 'English', monthlyAmount: 100000 });
+  const first = service.createGroup({ name: 'First', courseId: course.id });
+  const second = service.createGroup({ name: 'Second', courseId: course.id });
+  service.createStudent({ name: 'Alice', phone: '+998901234567', groupId: first.id });
+  service.createStudent({ name: 'Bob', phone: '+998901234568', groupId: second.id });
+  await bot.handleUpdate(callback(owner, `group:${first.id}`));
+  await bot.handleUpdate(message(outsider, '/students'));
+  expect(String(calls.at(-1)?.payload.text)).toContain('Alice');
+  expect(String(calls.at(-1)?.payload.text)).toContain('Bob');
+  service.deleteGroup(first.id);
+  await bot.handleUpdate(message(owner, '/students'));
+  expect(String(calls.at(-1)?.payload.text)).toContain('Bob');
+  await bot.handleUpdate(callback(owner, `group:${first.id}`));
+  expect(String(calls.at(-1)?.payload.text)).toContain('Группа не найдена');
+});
+
+it('пагинация и переход месяца сохраняют группу, будущий месяц показывает прочерк', async () => {
+  const course = service.createCourse({ name: 'English', monthlyAmount: 100000 });
+  const group = service.createGroup({ name: 'Morning', courseId: course.id });
+  for (let index = 0; index < 8; index++)
+    service.createStudent({ name: `Student ${index}`, phone: '+998901234567', groupId: group.id });
+  const { currentMonth, shiftMonth } = await import('../src/calendar');
+  await bot.handleUpdate(callback(owner, `group:${group.id}`));
+  await bot.handleUpdate(message(owner, '/debt'));
+  expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain(
+    `debt:${currentMonth()}:1:${group.id}`,
+  );
+  await bot.handleUpdate(callback(owner, `debt:${currentMonth()}:1:${group.id}`));
+  expect(String(calls.at(-1)?.payload.text)).toContain('Страница 2/2');
+  await bot.handleUpdate(callback(owner, `debt:${shiftMonth(currentMonth(), 1)}:0:${group.id}`));
+  expect(String(calls.at(-1)?.payload.text)).toContain('Месяц ещё не начался');
+  expect(String(calls.at(-1)?.payload.text)).toContain('Итого: <code>—</code>');
+  await bot.handleUpdate(message(owner, '/students'));
+  expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain(`students:1:${group.id}`);
+});
+
+it('бот показывает исторический тариф текущего месяца после правки курса, включая пустые группы', async () => {
+  const course = service.createCourse({ name: 'English', monthlyAmount: 100000 });
+  const group = service.createGroup({ name: 'Morning', courseId: course.id });
+  service.updateCourse(course.id, { monthlyAmount: 200000 });
+  await bot.handleUpdate(message(owner, '/groups'));
+  expect(String(calls.at(-1)?.payload.text)).toContain('100 000 сум');
+  expect(String(calls.at(-1)?.payload.text)).not.toContain('200 000 сум');
+  service.createStudent({ name: 'Alice', phone: '+998901234567', groupId: group.id });
+  await bot.handleUpdate(message(owner, '/students'));
+  expect(String(calls.at(-1)?.payload.text)).toContain('100 000 сум');
+  expect(String(calls.at(-1)?.payload.text)).not.toContain('200 000 сум');
+});
+
+it('USD-карточка ученика и квитанция содержат группу, курс, точную сумму и остаток', async () => {
+  const course = service.createCourse({
+    name: 'English USD',
+    currency: 'USD',
+    monthlyAmount: 12550,
+  });
+  const group = service.createGroup({ name: 'Evening', courseId: course.id });
+  const student = service.createStudent({
+    name: 'Alice',
+    phone: '+998901234567',
+    groupId: group.id,
+  });
+  await bot.handleUpdate(callback(owner, `student:${student.id}`));
+  expect(String(calls.at(-1)?.payload.text)).toContain('Evening');
+  expect(String(calls.at(-1)?.payload.text)).toContain('English USD');
+  expect(String(calls.at(-1)?.payload.text)).toContain('125,50 $');
+  await bot.handleUpdate(message(owner, `/pay ${student.id} 25,25`));
+  const text = String(calls.at(-1)?.payload.text);
+  expect(text).toContain('Evening');
+  expect(text).toContain('English USD');
+  expect(text).toContain('25,25 $');
+  expect(text).toContain('100,25 $');
+  expect(service.payments(student.id)).toHaveLength(1);
+});
+
+it('полностью оплатившему ученику не предлагает новую оплату', async () => {
+  const student = service.createStudent({
+    name: 'Alice',
+    phone: '+998901234567',
+    group: 'A2',
+    monthlyAmount: 100000,
+  });
+  const { today } = await import('../src/calendar');
+  service.addPayment(student.id, { amount: 100000, date: today() });
+  await bot.handleUpdate(callback(owner, `student:${student.id}`));
+  expect(String(calls.at(-1)?.payload.text)).toContain('всё оплачено');
+  expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).not.toContain('manual:');
+});
+
+it('длинные HTML-имена в справочниках экранируются и не превышают лимит сообщения', async () => {
+  const course = service.createCourse({ name: '"'.repeat(80), monthlyAmount: 100000 });
+  for (let index = 0; index < 6; index++) {
+    const group = service.createGroup({ name: '"'.repeat(79) + index, courseId: course.id });
+    service.createStudent({ name: '"'.repeat(100), phone: '+998901234567', groupId: group.id });
+  }
+  for (const command of ['/groups', '/students', '/debt']) {
+    await bot.handleUpdate(message(owner, command));
+    const text = String(calls.at(-1)?.payload.text);
+    expect(text.length).toBeLessThanOrEqual(4096);
+    expect(text).toContain('&quot;');
+  }
+});

@@ -1,8 +1,9 @@
+import { groupCaption } from './labels';
 import { Marquee } from './Marquee';
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeftRight, Check, Plus } from 'lucide-react';
+import { ArrowLeftRight, Check, Info, Plus } from 'lucide-react';
 import type { Group } from '../src/contracts';
 import { useI18n } from './i18n';
 
@@ -234,11 +235,11 @@ export function GroupMenu({
                   if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
                   event.preventDefault();
                   const buttons = [
-                    ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                      'button:not(:disabled)',
+                    ...event.currentTarget.querySelectorAll<HTMLElement>(
+                      'button:not(:disabled), a[role="menuitem"]',
                     ),
                   ];
-                  const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                  const index = buttons.indexOf(document.activeElement as HTMLElement);
                   buttons[
                     event.key === 'Home'
                       ? 0
@@ -263,9 +264,11 @@ export function GroupMenu({
                         <strong>
                           <Marquee text={group.name} />
                         </strong>
-                        <small>
-                          <Marquee text={group.courseName} />
-                        </small>
+                        {groupCaption(group.name, group.courseName) !== group.name && (
+                          <small>
+                            <Marquee text={group.courseName} />
+                          </small>
+                        )}
                       </span>
                       {group.id === activeId && <Check size={17} />}
                     </button>
@@ -284,6 +287,10 @@ export function GroupMenu({
                     {t('Создать')}
                   </span>
                 </button>
+                <a role="menuitem" className="group-menu-about" href="/about">
+                  <Info size={18} />
+                  {t('О проекте')}
+                </a>
               </motion.div>
             </Popover.Content>
           </Popover.Portal>

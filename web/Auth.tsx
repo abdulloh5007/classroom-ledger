@@ -1,7 +1,7 @@
 import { useI18n } from './i18n';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { BookOpen, Eye, EyeOff, Moon, Sun } from 'lucide-react';
+import { BookOpen, Eye, EyeOff, Info, Moon, Sun } from 'lucide-react';
 import { api } from './api';
 import { App } from './App';
 import { Spinner } from './components';
@@ -76,6 +76,9 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
           <span>{t('класс')}</span>
         </a>
         <div className="login-controls">
+          <a className="icon-button" href="/about" aria-label={t('О проекте')}>
+            <Info size={19} />
+          </a>
           <button
             className="icon-button login-theme"
             aria-label={dark ? t('Включить светлую тему') : t('Включить тёмную тему')}
