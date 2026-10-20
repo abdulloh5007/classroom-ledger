@@ -7,8 +7,14 @@ const file = existsSync('.env') ? parse(readFileSync('.env')) : {};
 const env = z
   .object({
     BOT_TOKEN: z.string().default(''),
-    WEB_USERNAME: z.string().min(1).default('owner'),
-    WEB_PASSWORD: z.string().default(''),
+    WEB_USERNAME: z.string().min(1).default('admin'),
+    WEB_PASSWORD: z
+      .string()
+      .refine(
+        (value) => !value || value.length >= 6,
+        'WEB_PASSWORD должен содержать минимум 6 символов',
+      )
+      .default(''),
     OWNER_ID: z.preprocess(
       (value) => (value === '' || value === undefined ? undefined : value),
       z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
@@ -18,8 +24,6 @@ const env = z
   })
   .parse(file);
 if (env.BOT_TOKEN && !env.OWNER_ID) throw new Error('Заполните OWNER_ID в .env');
-if (env.WEB_PASSWORD && env.WEB_PASSWORD.length < 16)
-  throw new Error('WEB_PASSWORD должен содержать минимум 16 символов');
 export const config = {
   webAuth: env.WEB_PASSWORD
     ? { username: env.WEB_USERNAME, password: env.WEB_PASSWORD }

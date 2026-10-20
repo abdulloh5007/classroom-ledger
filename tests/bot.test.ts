@@ -576,3 +576,50 @@ it('переход через полночь требует нового под�
   expect(service.payments(student.id)).toHaveLength(0);
   expect(String(calls.at(-1)?.payload.text)).toContain('Дата изменилась');
 });
+
+it('следующий новый личный /start получает права один раз и видит рабочее меню', async () => {
+  service.armNextAdmin(owner);
+  const update = message(outsider, '/start');
+  if (update.message) update.message.date = Math.floor(Date.now() / 1000);
+  await bot.handleUpdate(update);
+  expect(service.canAccess(outsider)).toBe(true);
+  expect(String(calls.at(-1)?.payload.text)).toContain('Доступ администратора выдан');
+  expect(String(calls.at(-1)?.payload.text)).toContain('Администратор');
+  expect(lastButtons().some((button) => button.callback_data === 'nav:pay')).toBe(true);
+  expect(service.nextAdminEnrollment(owner).enabled).toBe(false);
+  const next = message(789, '/start');
+  if (next.message) next.message.date = Math.floor(Date.now() / 1000);
+  await bot.handleUpdate(next);
+  expect(service.canAccess(789)).toBe(false);
+});
+it('help, групповой чат, бот и старый /start не забирают автоприглашение', async () => {
+  service.armNextAdmin(owner);
+  await bot.handleUpdate(message(outsider, '/help'));
+  const group = message(outsider, '/start');
+  if (group.message) {
+    group.message.chat = { id: -123, type: 'group', title: 'Test' };
+    group.message.date = Math.floor(Date.now() / 1000);
+  }
+  await bot.handleUpdate(group);
+  const automated = message(outsider, '/start');
+  if (automated.message?.from) {
+    automated.message.from.is_bot = true;
+    automated.message.date = Math.floor(Date.now() / 1000);
+  }
+  await bot.handleUpdate(automated);
+  const old = message(outsider, '/start');
+  if (old.message) old.message.date = service.nextAdminEnrollment(owner).armedAt! - 1;
+  await bot.handleUpdate(old);
+  expect(service.canAccess(outsider)).toBe(false);
+  expect(service.nextAdminEnrollment(owner).enabled).toBe(true);
+});
+it('только владелец управляет одноразовым приглашением кнопками', async () => {
+  service.addAdmin(owner, outsider);
+  await bot.handleUpdate(callback(outsider, 'admin:next:arm'));
+  expect(service.nextAdminEnrollment(owner).enabled).toBe(false);
+  await bot.handleUpdate(message(owner, '/admins'));
+  await bot.handleUpdate(callback(owner, action('admin:next:arm')));
+  expect(service.nextAdminEnrollment(owner).enabled).toBe(true);
+  await bot.handleUpdate(callback(owner, action('admin:next:off')));
+  expect(service.nextAdminEnrollment(owner).enabled).toBe(false);
+});

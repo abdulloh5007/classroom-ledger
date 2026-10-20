@@ -9,7 +9,7 @@ export function openDatabase(path: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
   const version = db.pragma('user_version', { simple: true }) as number;
-  if (version > 7) {
+  if (version > 8) {
     db.close();
     throw new Error('Версия БД новее приложения');
   }
@@ -200,6 +200,20 @@ export function openDatabase(path: string): Database.Database {
           ON CONFLICT(course_id,effective_month) DO UPDATE SET monthly_amount=excluded.monthly_amount;
         END;
         PRAGMA user_version=7;
+      `);
+    })();
+  if (version < 8)
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS bot_admin_enrollment (
+          singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+          enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+          armed_by INTEGER NOT NULL,
+          armed_at INTEGER NOT NULL,
+          claimed_by INTEGER,
+          claimed_at INTEGER
+        );
+        PRAGMA user_version=8;
       `);
     })();
   return db;

@@ -237,6 +237,14 @@ export function createBot(token: string, service: LedgerService) {
   bot.command(['start', 'help', 'about'], async (ctx) => {
     if (!ctx.from) return;
     await finishInput(ctx);
+    const command = (ctx.msg?.text ?? '').split(/\s/)[0]?.split('@')[0];
+    const promoted =
+      command === '/start' &&
+      ctx.chat.type === 'private' &&
+      ctx.from.is_bot === false &&
+      ctx.message !== undefined
+        ? service.claimNextAdmin(ctx.from.id, ctx.message.date)
+        : false;
     if (ctx.chat.type === 'private') await syncMenu(ctx.from.id);
     const page =
       (ctx.msg?.text ?? '').split(/\s/)[0]?.split('@')[0] === '/help'
@@ -244,6 +252,13 @@ export function createBot(token: string, service: LedgerService) {
         : (ctx.msg?.text ?? '').split(/\s/)[0]?.split('@')[0] === '/about'
           ? aboutPage()
           : homePage(ctx);
+    if (promoted)
+      page.text +=
+        '\n\n' +
+        block(
+          '✅ <b>Доступ администратора выдан</b>',
+          'Вы получили одноразовое приглашение владельца. Выберите действие в меню.',
+        );
     if (ctx.chat.type !== 'private') {
       page.keyboard = new InlineKeyboard().url(
         'Открыть личный чат',
@@ -618,6 +633,7 @@ export function createBot(token: string, service: LedgerService) {
     });
   }
   function adminPage(rawPage = 0): Page {
+    const enrollment = service.nextAdminEnrollment(service.ownerId!);
     const admins = service.admins(),
       pages = Math.max(1, Math.ceil(admins.length / 10)),
       page = Math.max(0, Math.min(rawPage, pages - 1));
@@ -625,6 +641,9 @@ export function createBot(token: string, service: LedgerService) {
       .text('＋ Добавить администратора', 'admin:add')
       .success()
       .row();
+    if (enrollment.enabled)
+      keyboard.text('Отменить админа по /start', 'admin:next:off').danger().row();
+    else keyboard.text('＋ Админ по следующему /start', 'admin:next:arm').primary().row();
     for (const admin of admins.slice(page * 10, page * 10 + 10))
       keyboard
         .text(`Удалить · ${admin.telegramId}`, `admin:ask:${admin.telegramId}`)
@@ -635,7 +654,13 @@ export function createBot(token: string, service: LedgerService) {
     return {
       text: rich(
         '⚙ Администраторы',
-        block(`Владелец: <code>${service.ownerId}</code>`, 'Владельца удалить нельзя.') +
+        block(
+          `Владелец: <code>${service.ownerId}</code>`,
+          'Владельца удалить нельзя.',
+          enrollment.enabled
+            ? '🟢 Следующий новый пользователь с /start в личном чате получит права администратора. Затем режим отключится.'
+            : 'Автовыдача по /start выключена.',
+        ) +
           '\n\n' +
           (admins.length
             ? admins
@@ -828,6 +853,13 @@ export function createBot(token: string, service: LedgerService) {
     }
     await ctx.answerCallbackQuery();
     const data = ctx.callbackQuery.data;
+    if (data === 'admin:next:arm' || data === 'admin:next:off') {
+      await finishInput(ctx);
+      if (data === 'admin:next:arm') service.armNextAdmin(ctx.from!.id);
+      else service.cancelNextAdmin(ctx.from!.id);
+      await show(ctx, adminPage());
+      return;
+    }
     if (data === 'admin:add') {
       await finishInput(ctx);
       const requestId = randomInt(1, 2_000_000_000);

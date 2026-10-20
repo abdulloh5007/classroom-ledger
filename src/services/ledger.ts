@@ -429,6 +429,66 @@ export class LedgerService {
       .prepare('INSERT OR IGNORE INTO admins(telegram_id, added_by) VALUES (?, ?)')
       .run(id, actor);
   }
+  nextAdminEnrollment(actor: number): {
+    enabled: boolean;
+    armedAt: number | null;
+    claimedBy: number | null;
+  } {
+    this.requireOwner(actor);
+    const row = this.db
+      .prepare(
+        'SELECT enabled, armed_by AS armedBy, armed_at AS armedAt, claimed_by AS claimedBy FROM bot_admin_enrollment WHERE singleton=1',
+      )
+      .get() as
+      { enabled: number; armedBy: number; armedAt: number; claimedBy: number | null } | undefined;
+    return {
+      enabled: row?.enabled === 1 && row.armedBy === this.ownerId,
+      armedAt: row?.armedAt ?? null,
+      claimedBy: row?.claimedBy ?? null,
+    };
+  }
+  armNextAdmin(actor: number): void {
+    this.requireOwner(actor);
+    this.db
+      .transaction(() => {
+        if (this.nextAdminEnrollment(actor).enabled) return;
+        this.db
+          .prepare(
+            `INSERT INTO bot_admin_enrollment(singleton,enabled,armed_by,armed_at,claimed_by,claimed_at)
+        VALUES(1,1,?,?,NULL,NULL)
+        ON CONFLICT(singleton) DO UPDATE SET enabled=1,armed_by=excluded.armed_by,armed_at=excluded.armed_at,claimed_by=NULL,claimed_at=NULL`,
+          )
+          .run(actor, Math.floor(Date.now() / 1000));
+      })
+      .immediate();
+  }
+  cancelNextAdmin(actor: number): void {
+    this.requireOwner(actor);
+    this.db.prepare('UPDATE bot_admin_enrollment SET enabled=0 WHERE singleton=1').run();
+  }
+  claimNextAdmin(target: unknown, messageDate: number): boolean {
+    const id = idSchema.parse(target);
+    if (!Number.isSafeInteger(messageDate) || messageDate < 0 || !this.ownerId) return false;
+    return this.db
+      .transaction(() => {
+        const enrollment = this.nextAdminEnrollment(this.ownerId!);
+        if (
+          !enrollment.enabled ||
+          enrollment.armedAt === null ||
+          messageDate < enrollment.armedAt ||
+          this.canAccess(id)
+        )
+          return false;
+        this.addAdmin(this.ownerId!, id);
+        this.db
+          .prepare(
+            'UPDATE bot_admin_enrollment SET enabled=0,claimed_by=?,claimed_at=? WHERE singleton=1 AND enabled=1',
+          )
+          .run(id, Math.floor(Date.now() / 1000));
+        return true;
+      })
+      .immediate();
+  }
   removeAdmin(actor: number, target: unknown): void {
     this.requireOwner(actor);
     const id = idSchema.parse(target);
