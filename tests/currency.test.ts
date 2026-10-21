@@ -120,9 +120,13 @@ it('мигрирует v5 без потери ID, сумм, групп и свя
     const groups = file.prepare('SELECT * FROM student_groups').all();
     file.close();
     file = openDatabase(path);
-    expect(file.prepare('SELECT * FROM students').all()).toEqual(students);
+    expect(file.prepare('SELECT * FROM students').all()).toEqual(
+      students.map((row) => ({ ...(row as Record<string, unknown>), enrolled_on: null })),
+    );
     expect(file.prepare('SELECT * FROM payments').all()).toEqual(payments);
-    expect(file.prepare('SELECT * FROM student_groups').all()).toEqual(groups);
+    expect(file.prepare('SELECT * FROM student_groups').all()).toEqual(
+      groups.map((row) => ({ ...(row as Record<string, unknown>), starts_on: null })),
+    );
     expect(file.pragma('foreign_key_check')).toEqual([]);
     expect(file.pragma('foreign_keys', { simple: true })).toBe(1);
     expect(new LedgerService(file).student(student.id).currency).toBe('UZS');

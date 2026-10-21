@@ -12,12 +12,16 @@ export function GroupMenu({
   activeId,
   onSelect,
   onCreate,
+  onStaff,
+  onProfile,
   ready,
 }: {
   groups: Group[];
   activeId?: number;
   onSelect: (id: number) => void;
   onCreate: () => void;
+  onStaff?: () => void;
+  onProfile?: () => void;
   ready: boolean;
 }) {
   const { t } = useI18n();
@@ -287,6 +291,30 @@ export function GroupMenu({
                     {t('Создать')}
                   </span>
                 </button>
+                {onStaff && (
+                  <button
+                    role="menuitem"
+                    className="group-menu-about"
+                    onClick={() => {
+                      pending.current = onStaff;
+                      setOpen(false);
+                    }}
+                  >
+                    Сотрудники и роли
+                  </button>
+                )}
+                {onProfile && (
+                  <button
+                    role="menuitem"
+                    className="group-menu-about"
+                    onClick={() => {
+                      pending.current = onProfile;
+                      setOpen(false);
+                    }}
+                  >
+                    Мой профиль
+                  </button>
+                )}
                 <a role="menuitem" className="group-menu-about" href="/about">
                   <Info size={18} />
                   {t('О проекте')}

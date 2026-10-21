@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { AccountService } from '../services/accounts.js';
 import { project } from '../project.js';
 import { monthSchema, moneySchema, type Group, type Student } from '../contracts.js';
 import { randomBytes, randomInt } from 'node:crypto';
@@ -28,6 +30,7 @@ type PayIntent = {
   studentId: number;
   token: string;
   step: 'amount' | 'manual' | 'confirm';
+  billingMonth: string;
   origin: Origin;
   amount?: number;
   date?: string;
@@ -39,6 +42,12 @@ const CANCEL = '✕ Отмена';
 
 export function createBot(token: string, service: LedgerService) {
   const bot = new Bot(token, { client: { timeoutSeconds: 35 } });
+  const actors = new AsyncLocalStorage<number>();
+  const ledger = () => {
+    const actor = actors.getStore();
+    return actor ? service.forTelegram(actor) : service;
+  };
+  bot.use((ctx, next) => actors.run(ctx.from?.id ?? 0, next));
   const pending = new Map<number, Pending>();
   const selectedGroups = new Map<number, number>();
   let stopped = false;
@@ -50,14 +59,19 @@ export function createBot(token: string, service: LedgerService) {
     `profile:${studentId}:${originData(origin)}`;
   function selectedGroup(userId: number): number | undefined {
     const id = selectedGroups.get(userId);
-    if (id && !service.groups().some((group) => group.id === id)) {
+    if (
+      id &&
+      !ledger()
+        .groups()
+        .some((group) => group.id === id)
+    ) {
       selectedGroups.delete(userId);
       return undefined;
     }
     return id;
   }
   function groupFromScope(value?: string): number | undefined {
-    return value && value !== 'all' ? service.group(Number(value)).id : undefined;
+    return value && value !== 'all' ? ledger().group(Number(value)).id : undefined;
   }
   function readOrigin(value: string): Origin {
     const match = /^(s|c|d):(?:(\d{4}-\d{2}):)?(\d{1,9}):(all|\d+)$/.exec(value);
@@ -132,7 +146,14 @@ export function createBot(token: string, service: LedgerService) {
   function homePage(ctx: Context): Page {
     const user = ctx.from!;
     const allowed = ctx.chat?.type === 'private' && service.canAccess(user.id);
-    const role = service.isOwner(user.id) ? 'Владелец' : allowed ? 'Администратор' : 'Гость';
+    const account = new AccountService(service.db).byTelegram(user.id);
+    const role = service.isOwner(user.id)
+      ? 'Владелец'
+      : allowed
+        ? account?.role === 'teacher'
+          ? 'Учитель'
+          : 'Администратор'
+        : 'Гость';
     const profile = block(
       `Имя: <b>${html([user.first_name, user.last_name].filter(Boolean).join(' '))}</b>`,
       `Telegram ID: <code>${user.id}</code>`,
@@ -144,7 +165,7 @@ export function createBot(token: string, service: LedgerService) {
         `Привет, ${html(user.first_name)}! 👋`,
         `Добро пожаловать в <b>${project.name}</b> — учёт оплат учебного центра.\n\n${profile}`,
         allowed
-          ? `Группа: <b>${groupId ? short(service.group(groupId).name) : 'Все группы'}</b>\nВыберите действие кнопкой ниже.\n<i>Приём оплат в боте — только в сумах.</i>`
+          ? `Группа: <b>${groupId ? short(ledger().group(groupId).name) : 'Все группы'}</b>\nВыберите действие кнопкой ниже.\n<i>Приём оплат в боте — только в сумах.</i>`
           : 'Чтобы получить доступ, передай владельцу свой Telegram ID.\n<tg-spoiler>Ученики и оплаты видны только владельцу и администраторам.</tg-spoiler>',
       ),
       keyboard: menu(user.id, allowed),
@@ -325,7 +346,7 @@ export function createBot(token: string, service: LedgerService) {
     );
   }
   function groupsPage(rawPage = 0): Page {
-    const groups = service.groups(),
+    const groups = ledger().groups(),
       pages = Math.max(1, Math.ceil(groups.length / 6)),
       page = Math.max(0, Math.min(rawPage, pages - 1));
     const keyboard = new InlineKeyboard().text('◫ Все группы', 'group:all').primary().row();
@@ -337,7 +358,7 @@ export function createBot(token: string, service: LedgerService) {
       .slice(page * 6, page * 6 + 6)
       .map(
         (g) =>
-          `<b>${short(g.name, 24)}</b> · <code>#${g.id}</code>\nКурс: ${short(g.courseName, 24)}\nТариф: <code>${formatMoney(service.courseTariff(g.courseId), g.currency)}</code> · Учеников: ${g.studentCount}`,
+          `<b>${short(g.name, 24)}</b> · <code>#${g.id}</code>\nКурс: ${short(g.courseName, 24)}\nТариф: <code>${formatMoney(ledger().courseTariff(g.courseId), g.currency)}</code> · Учеников: ${g.studentCount}`,
       )
       .join('\n\n');
     return {
@@ -352,8 +373,8 @@ export function createBot(token: string, service: LedgerService) {
     };
   }
   function groupOverview(groupId?: number): Page {
-    const group = groupId === undefined ? undefined : service.group(groupId),
-      rows = service.monthlyBalances(currentMonth(), groupId);
+    const group = groupId === undefined ? undefined : ledger().group(groupId),
+      rows = ledger().monthlyBalances(currentMonth(), groupId);
     const keyboard = new InlineKeyboard()
       .text('◷ Должники', `view:debt:${scope(groupId)}`)
       .primary()
@@ -372,7 +393,7 @@ export function createBot(token: string, service: LedgerService) {
           ...(group
             ? [
                 contextLine(group, 60),
-                `Тариф: <code>${formatMoney(service.courseTariff(group.courseId), group.currency)}</code>`,
+                `Тариф: <code>${formatMoney(ledger().courseTariff(group.courseId), group.currency)}</code>`,
               ]
             : []),
           `Месяц: <code>${currentMonth()}</code>`,
@@ -389,9 +410,9 @@ export function createBot(token: string, service: LedgerService) {
   }
   function debtPage(month: string, rawPage = 0, groupId?: number): Page {
     monthSchema.parse(month);
-    const group = groupId === undefined ? undefined : service.group(groupId),
+    const group = groupId === undefined ? undefined : ledger().group(groupId),
       future = month > currentMonth(),
-      rows = future ? [] : service.debtors(month, groupId),
+      rows = future ? [] : ledger().debtors(month, groupId),
       pages = Math.max(1, Math.ceil(rows.length / 4)),
       page = Math.max(0, Math.min(rawPage, pages - 1));
     const origin: Origin = { kind: 'd', page, month, groupId };
@@ -399,7 +420,7 @@ export function createBot(token: string, service: LedgerService) {
     const entries = selected
       .map(
         (r) =>
-          `<b>${short(r.name, 36)}</b> · <code>#${r.studentId}</code>\n${contextLine(group ?? service.group(service.student(r.studentId).groupId), 22)}\nТариф: <code>${formatMoney(r.monthlyAmount, r.currency)}</code>\nОплачено: <code>${formatMoney(r.paid, r.currency)}</code> · Долг: <code>${formatMoney(r.debt, r.currency)}</code>`,
+          `<b>${short(r.name, 36)}</b> · <code>#${r.studentId}</code>\n${contextLine(group ?? ledger().group(ledger().student(r.studentId).groupId), 22)}\nТариф: <code>${formatMoney(r.monthlyAmount, r.currency)}</code>\nОплачено: <code>${formatMoney(r.paid, r.currency)}</code> · Долг: <code>${formatMoney(r.debt, r.currency)}</code>`,
       )
       .join('\n\n');
     const keyboard = new InlineKeyboard();
@@ -430,8 +451,8 @@ export function createBot(token: string, service: LedgerService) {
     };
   }
   function studentsPage(rawPage: number, choose: boolean, groupId?: number): Page {
-    const group = groupId === undefined ? undefined : service.group(groupId);
-    const all = service.students(groupId),
+    const group = groupId === undefined ? undefined : ledger().group(groupId);
+    const all = ledger().students(groupId),
       students = choose ? all.filter((s) => s.currency === 'UZS') : all;
     const page = Math.max(0, Math.min(rawPage, Math.max(0, Math.ceil(students.length / 6) - 1))),
       selected = students.slice(page * 6, page * 6 + 6),
@@ -452,7 +473,7 @@ export function createBot(token: string, service: LedgerService) {
     const entries = selected
       .map(
         (s) =>
-          `<code>#${s.id}</code> <b>${short(s.name, 36)}</b>\n${contextLine(group ?? service.group(s.groupId), 22)}\nТариф: <code>${formatMoney(service.courseTariff(s.courseId), s.currency)}</code>`,
+          `<code>#${s.id}</code> <b>${short(s.name, 36)}</b>\n${contextLine(group ?? ledger().group(s.groupId), 22)}\nТариф: <code>${formatMoney(ledger().courseTariff(s.courseId), s.currency)}</code>`,
       )
       .join('\n\n');
     return {
@@ -465,8 +486,11 @@ export function createBot(token: string, service: LedgerService) {
     };
   }
   function studentPage(student: Student, origin: Origin): Page {
-    const balance = service.balance(student.id),
-      group = service.group(student.groupId);
+    const period = [origin.month ?? currentMonth(), ledger().firstMonth(student) ?? '1900-01']
+      .sort()
+      .at(-1)!;
+    const balance = ledger().balance(student.id, period),
+      group = ledger().group(student.groupId);
     const keyboard = new InlineKeyboard();
     if (student.currency === 'UZS' && balance.debt > 0)
       keyboard
@@ -482,30 +506,30 @@ export function createBot(token: string, service: LedgerService) {
           `ID: <code>${student.id}</code>`,
           contextLine(group, 40),
           `Телефон: <code>${html(student.phone)}</code>`,
-          `Месяц: <code>${currentMonth()}</code>`,
-          `Тариф: <code>${formatMoney(service.courseTariff(student.courseId), student.currency)}</code>`,
+          `Месяц: <code>${period}</code>`,
+          `Тариф: <code>${formatMoney(ledger().courseTariff(student.courseId, period), student.currency)}</code>`,
           `Оплачено: <code>${formatMoney(balance.paid, student.currency)}</code>`,
           `Осталось: <code>${formatMoney(balance.debt, student.currency)}</code>`,
         ),
         student.currency === 'USD'
           ? html(UZS_ONLY)
           : balance.debt === 0
-            ? '✓ За текущий месяц всё оплачено.'
+            ? '✓ За этот учебный месяц всё оплачено.'
             : 'Нажмите «Внести оплату», чтобы выбрать сумму.',
       ),
       keyboard: mainButton(keyboard),
     };
   }
   function payableStudent(id: number): Student {
-    const student = service.student(id);
+    const student = ledger().student(id);
     if (student.currency !== 'UZS') throw new AppError(400, UZS_ONLY);
     return student;
   }
   function amountPage(intent: PayIntent): Page {
     const student = payableStudent(intent.studentId),
-      balance = service.balance(student.id),
+      balance = ledger().balance(student.id, intent.billingMonth),
       keyboard = new InlineKeyboard();
-    if (balance.debt === 0) return studentPage(student, intent.origin);
+
     for (const amount of new Set(
       [balance.debt, 100000, 250000].filter((value) => value > 0 && value <= balance.debt),
     ))
@@ -516,10 +540,13 @@ export function createBot(token: string, service: LedgerService) {
         )
         .success()
         .row();
+    const first = ledger().firstMonth(student) ?? '1900-01';
+    if (intent.billingMonth > first) keyboard.text('‹ Пред. месяц', `period:${intent.token}:-1`);
+    if (intent.billingMonth < '9999-11') keyboard.text('След. месяц ›', `period:${intent.token}:1`);
+    keyboard.row();
+    if (balance.debt > 0)
+      keyboard.text('✎ Ввести вручную', `manual:${intent.token}`).primary().row();
     keyboard
-      .text('✎ Ввести вручную', `manual:${intent.token}`)
-      .primary()
-      .row()
       .text(
         '‹ Назад',
         intent.origin.kind === 'c'
@@ -532,11 +559,13 @@ export function createBot(token: string, service: LedgerService) {
         '＋ Выберите сумму',
         block(
           `<b>${short(student.name, 60)}</b> · <code>#${student.id}</code>`,
-          contextLine(service.group(student.groupId), 40),
-          `Месяц: <code>${currentMonth()}</code>`,
+          contextLine(ledger().group(student.groupId), 40),
+          `Месяц: <code>${intent.billingMonth}</code>`,
           `Остаток: <code>${formatMoney(balance.debt)}</code>`,
         ),
-        'Нажатие суммы открывает подтверждение. Оплата ещё не записана.',
+        balance.debt === 0
+          ? 'За этот месяц всё оплачено. Выберите следующий месяц для предоплаты.'
+          : 'Нажатие суммы открывает подтверждение. Оплата ещё не записана.',
       ),
       keyboard: mainButton(keyboard),
     };
@@ -544,7 +573,7 @@ export function createBot(token: string, service: LedgerService) {
   function confirmation(intent: PayIntent, amount: number): Page {
     moneySchema.parse(amount);
     const student = payableStudent(intent.studentId),
-      balance = service.balance(student.id);
+      balance = ledger().balance(student.id, intent.billingMonth);
     if (amount > balance.debt)
       throw new AppError(400, 'Сумма превышает остаток долга. Выберите другую сумму.');
     return {
@@ -552,9 +581,10 @@ export function createBot(token: string, service: LedgerService) {
         '✓ Подтвердите оплату',
         block(
           `<b>${short(student.name, 60)}</b> · <code>#${student.id}</code>`,
-          contextLine(service.group(student.groupId), 40),
+          contextLine(ledger().group(student.groupId), 40),
           `Сумма: <code>${formatMoney(amount)}</code>`,
-          `Дата: <code>${intent.date ?? today()}</code>`,
+          `Дата получения: <code>${intent.date ?? today()}</code>`,
+          `За месяц: <code>${intent.billingMonth}</code>`,
           `После оплаты останется: <code>${formatMoney(balance.debt - amount)}</code>`,
         ),
         'Проверьте ученика и сумму. Платёж запишется только после подтверждения.',
@@ -599,6 +629,7 @@ export function createBot(token: string, service: LedgerService) {
     key: string,
     origin?: Origin,
     expectedDate?: string,
+    billingMonth = currentMonth(),
   ) {
     if (expectedDate && expectedDate !== today())
       throw new AppError(
@@ -606,8 +637,8 @@ export function createBot(token: string, service: LedgerService) {
         'Дата изменилась. Вернитесь к выбору суммы и подтвердите новую дату.',
       );
     const student = payableStudent(studentId);
-    const payment = service.addPayment(student.id, { amount, date: today() }, key);
-    const balance = service.balance(student.id, payment.date.slice(0, 7));
+    const payment = ledger().addPayment(student.id, { amount, date: today(), billingMonth }, key);
+    const balance = ledger().balance(student.id, billingMonth);
     pending.delete(ctx.from!.id);
     const back = origin ?? { kind: 's' as const, page: 0, groupId: student.groupId };
     await send(ctx, {
@@ -616,9 +647,10 @@ export function createBot(token: string, service: LedgerService) {
         block(
           `<b>${short(student.name, 60)}</b>`,
           `ID: <code>${student.id}</code>`,
-          contextLine(service.group(student.groupId), 40),
+          contextLine(ledger().group(student.groupId), 40),
           `Сумма: <code>${formatMoney(payment.amount)}</code>`,
-          `Дата: <code>${payment.date}</code>`,
+          `Дата получения: <code>${payment.date}</code>`,
+          `За месяц: <code>${billingMonth}</code>`,
           `Остаток долга: <code>${formatMoney(balance.debt)}</code>`,
         ),
         'Платёж сохранён в общей истории сайта и бота.',
@@ -746,7 +778,7 @@ export function createBot(token: string, service: LedgerService) {
   });
   bot.callbackQuery(/^profile:(\d+):(.+)$/, async (ctx) => {
     const origin = readOrigin(ctx.match[2]!);
-    const student = service.student(Number(ctx.match[1]));
+    const student = ledger().student(Number(ctx.match[1]));
     await ctx.answerCallbackQuery();
     await finishInput(ctx);
     await show(ctx, studentPage(student, origin));
@@ -773,18 +805,21 @@ export function createBot(token: string, service: LedgerService) {
     await pay(ctx, student.id, parseAmount(match[2]!, 'UZS'), `update:${ctx.update.update_id}`);
   });
   bot.callbackQuery(/^student:(\d+)(?::(.+))?$/, async (ctx) => {
-    const student = service.student(Number(ctx.match[1]));
+    const student = ledger().student(Number(ctx.match[1]));
     const origin = ctx.match[2]
       ? readOrigin(ctx.match[2])
       : { kind: 'c' as const, page: 0, groupId: selectedGroup(ctx.from!.id) };
     await ctx.answerCallbackQuery();
     await finishInput(ctx);
-    if (student.currency !== 'UZS' || service.balance(student.id).debt === 0) {
+    if (student.currency !== 'UZS') {
       await show(ctx, studentPage(student, origin));
       return;
     }
     const intent: PayIntent = {
       kind: 'pay',
+      billingMonth: [origin.month ?? currentMonth(), ledger().firstMonth(student) ?? '1900-01']
+        .sort()
+        .at(-1)!,
       studentId: student.id,
       token: randomBytes(8).toString('hex'),
       step: 'amount',
@@ -793,6 +828,24 @@ export function createBot(token: string, service: LedgerService) {
     };
     pending.set(ctx.from!.id, intent);
     await show(ctx, amountPage(intent));
+  });
+  bot.callbackQuery(/^period:([a-f0-9]{16}):(-1|1)$/, async (ctx) => {
+    const intent = state(ctx.from!.id);
+    if (!intent || intent.kind !== 'pay' || intent.token !== ctx.match[1]) {
+      await ctx.answerCallbackQuery({ text: 'Форма устарела', show_alert: true });
+      return;
+    }
+    const student = payableStudent(intent.studentId);
+    const nextMonth = shiftMonth(intent.billingMonth, Number(ctx.match[2]));
+    const first = ledger().firstMonth(student);
+    if (first && nextMonth < first) {
+      await ctx.answerCallbackQuery({ text: 'Период раньше начала обучения', show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const next = moveIntent(ctx.from!.id, intent, 'amount');
+    next.billingMonth = nextMonth;
+    await show(ctx, amountPage(next));
   });
   bot.callbackQuery(/^(pay|manual|amount|confirm):([a-f0-9]{16})(?::(\d+))?$/, async (ctx) => {
     const intent = state(ctx.from!.id);
@@ -815,6 +868,7 @@ export function createBot(token: string, service: LedgerService) {
         `intent:${intent.token}`,
         intent.origin,
         intent.date,
+        intent.billingMonth,
       );
       await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() });
       return;
@@ -830,8 +884,8 @@ export function createBot(token: string, service: LedgerService) {
         text: rich(
           '✎ Введите сумму',
           block(
-            `<b>${short(service.student(intent.studentId).name, 60)}</b>`,
-            `Остаток: <code>${formatMoney(service.balance(intent.studentId).debt)}</code>`,
+            `<b>${short(ledger().student(intent.studentId).name, 60)}</b>`,
+            `Остаток: <code>${formatMoney(ledger().balance(intent.studentId, intent.billingMonth).debt)}</code>`,
           ),
           'Отправьте целую сумму в сумах, например <code>250 000</code>. После ввода появится подтверждение.',
         ),

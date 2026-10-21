@@ -1,3 +1,4 @@
+import { idSchema } from './contracts.js';
 import Fastify from 'fastify';
 import { z } from 'zod';
 import {
@@ -29,7 +30,7 @@ export function createApp(service: LedgerService, logger = false, webAuth?: WebA
   app.server.maxConnections = 200;
   app.server.headersTimeout = 10_000;
   const limiter = new RequestLimiter();
-  const auth = webAuth ? new AuthService(service.db, webAuth) : undefined;
+  const auth = webAuth ? new AuthService(service.db, webAuth, service.ownerId) : undefined;
   app.addHook('onRequest', async (request) => {
     limiter.take('global', 1200);
     limiter.take(`ip:${clientIp(request)}`, 240);
@@ -104,6 +105,24 @@ export function createApp(service: LedgerService, logger = false, webAuth?: WebA
     reply.header('Set-Cookie', cookie(token, secureRequest(request), SESSION_SECONDS));
     return { authenticationRequired: true, username: data.username };
   });
+  app.get(
+    '/auth/profile',
+    async (request) => auth?.user(sessionToken(request.headers.cookie)) ?? null,
+  );
+  app.post('/auth/password', async (request, reply) => {
+    const user = auth?.user(sessionToken(request.headers.cookie));
+    if (!user || !auth) throw new AppError(401, 'Войдите снова');
+    const data = z
+      .object({
+        currentPassword: z.string().min(1).max(128),
+        newPassword: z.string().min(8).max(128),
+      })
+      .strict()
+      .parse(request.body);
+    auth.accounts.changePassword(user.id, data.currentPassword, data.newPassword);
+    reply.header('Set-Cookie', cookie('', secureRequest(request), 0));
+    return reply.code(204).send();
+  });
   app.post('/auth/logout', async (request, reply) => {
     auth?.logout(sessionToken(request.headers.cookie));
     reply.header('Set-Cookie', cookie('', secureRequest(request), 0));
@@ -141,10 +160,49 @@ export function createApp(service: LedgerService, logger = false, webAuth?: WebA
   // It does not rely on the spelling/encoding of the incoming URL.
   app.register(async (protectedApi) => {
     protectedApi.addHook('onRequest', async (request, reply) => {
-      if (auth && !auth.username(sessionToken(request.headers.cookie)))
+      const user = auth?.user(sessionToken(request.headers.cookie));
+      if (auth && !user)
         return reply.code(401).send({ error: 'Сессия завершена. Войдите снова.', details: null });
+      if (user?.mustChangePassword)
+        return reply.code(403).send({
+          error: 'Сначала смените временный пароль',
+          details: { mustChangePassword: true },
+        });
     });
-    registerRoutes(protectedApi, service);
+    registerRoutes(protectedApi, service, (request) => {
+      if (!auth) return service;
+      const user = auth.user(sessionToken(request.headers.cookie));
+      if (!user) throw new AppError(401, 'Сессия завершена. Войдите снова.');
+      if (user.mustChangePassword) throw new AppError(403, 'Сначала смените временный пароль');
+      return service.asUser(user.id);
+    });
+    const actor = (request: import('fastify').FastifyRequest) => {
+      const user = auth?.user(sessionToken(request.headers.cookie));
+      if (!user || !auth)
+        throw new AppError(403, 'Для управления сотрудниками требуется персональный вход');
+      return { user, accounts: auth.accounts };
+    };
+    protectedApi.get('/staff', async (request) => {
+      z.object({}).strict().parse(request.query);
+      const { user, accounts } = actor(request);
+      return accounts.list(user.id);
+    });
+    protectedApi.post('/staff', async (request, reply) => {
+      z.object({}).strict().parse(request.query);
+      const { user, accounts } = actor(request);
+      return reply.code(201).send(accounts.create(user.id, request.body));
+    });
+    protectedApi.patch('/staff/:id', async (request) => {
+      z.object({}).strict().parse(request.query);
+      const { user, accounts } = actor(request);
+      const { id } = z.object({ id: idSchema }).strict().parse(request.params);
+      return accounts.update(user.id, id, request.body);
+    });
+    protectedApi.get('/audit', async (request) => {
+      const { before } = z.object({ before: idSchema.optional() }).strict().parse(request.query);
+      const { user, accounts } = actor(request);
+      return accounts.events(user.id, before);
+    });
   });
   return app;
 }

@@ -1,3 +1,6 @@
+import { project } from '../src/project';
+import { usePermissions } from './Session';
+import { StaffPanel, ProfilePanel } from './Staff';
 import { groupCaption } from './labels';
 import { Marquee } from './Marquee';
 import { useI18n } from './i18n';
@@ -18,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Course, Group, Student } from '../src/contracts';
-import { currentMonth } from '../src/calendar';
+import { currentMonth, today } from '../src/calendar';
 import { Empty, Sheet, Tip, Spinner } from './components';
 import { DeleteStudent, History, PaymentForm, StudentForm } from './forms';
 import { prefetchHistory } from './history';
@@ -36,7 +39,7 @@ type Modal =
   | { type: 'history' | 'delete'; student: Student }
   | { type: 'course'; course?: Course }
   | { type: 'editGroup'; group: Group }
-  | { type: 'group' };
+  | { type: 'group' | 'staff' | 'profile' };
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -59,12 +62,14 @@ function initialTheme(): string {
   }
 }
 export function App({
+  onLogout,
   loggingOut = false,
 }: {
   onLogout?: () => Promise<void>;
   loggingOut?: boolean;
 }) {
   const { t, formatMoney } = useI18n();
+  const { canManageStaff } = usePermissions();
 
   const [month, setMonth] = useState(currentMonth());
   const [direction, setDirection] = useState(1);
@@ -86,9 +91,8 @@ export function App({
   } = useLedger(month);
   const loading = !ready || (tab === 'debtors' && monthLoading);
   const error = studentsError || (tab === 'debtors' ? monthError : '');
-  const future = month > currentMonth();
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('all');
-  const debtors = (future ? [] : (months[month] ?? [])).filter((row) =>
+  const debtors = (months[month] ?? []).filter((row) =>
     paymentStatus === 'all'
       ? true
       : paymentStatus === 'unpaid'
@@ -108,9 +112,13 @@ export function App({
     setModal(value);
     setSheetOpen(true);
   }, []);
-  const [groupDraft, setGroupDraft] = useState<GroupDraft>({ name: '', courseId: '' });
+  const [groupDraft, setGroupDraft] = useState<GroupDraft>({
+    name: '',
+    courseId: '',
+    startsOn: today(),
+  });
   const createGroup = useCallback(() => {
-    setGroupDraft({ name: '', courseId: '' });
+    setGroupDraft({ name: '', courseId: '', startsOn: today() });
     showModal({ type: 'group' });
   }, [showModal]);
   const editGroup = useCallback(() => {
@@ -202,26 +210,45 @@ export function App({
     [month],
   );
   const filtered = students.filter((student) => matchesStudent(student, query));
+  const firstTeachingMonth = students
+    .map(
+      (student) =>
+        [group?.startsOn, student.enrolledOn]
+          .filter((value): value is string => Boolean(value))
+          .sort()
+          .at(-1)
+          ?.slice(0, 7) ?? '1900-01',
+    )
+    .sort()[0];
+  const beforeTraining = Boolean(firstTeachingMonth && month < firstTeachingMonth);
   const modalTitle = !modal
     ? ''
-    : modal.type === 'editGroup'
-      ? t('Изменить группу')
-      : modal.type === 'group'
-        ? t('Создать группу')
-        : modal.type === 'course'
-          ? t(modal.course ? 'Редактировать курс' : 'Новый курс')
-          : modal.type === 'payment'
-            ? t('Внести оплату')
-            : modal.type === 'student'
-              ? modal.student
-                ? t('Редактировать ученика')
-                : t('Новый ученик')
-              : modal.type === 'delete'
-                ? t('Удалить ученика?')
-                : t('История оплат');
+    : modal.type === 'staff'
+      ? 'Сотрудники и роли'
+      : modal.type === 'profile'
+        ? 'Мой профиль'
+        : modal.type === 'editGroup'
+          ? t('Изменить группу')
+          : modal.type === 'group'
+            ? t('Создать группу')
+            : modal.type === 'course'
+              ? t(modal.course ? 'Редактировать курс' : 'Новый курс')
+              : modal.type === 'payment'
+                ? t('Внести оплату')
+                : modal.type === 'student'
+                  ? modal.student
+                    ? t('Редактировать ученика')
+                    : t('Новый ученик')
+                  : modal.type === 'delete'
+                    ? t('Удалить ученика?')
+                    : t('История оплат');
   const modalDescription = !modal
     ? ''
-    : modal.type === 'group' || modal.type === 'course' || modal.type === 'editGroup'
+    : modal.type === 'staff' ||
+        modal.type === 'profile' ||
+        modal.type === 'group' ||
+        modal.type === 'course' ||
+        modal.type === 'editGroup'
       ? ''
       : modal.type === 'payment'
         ? ''
@@ -232,6 +259,9 @@ export function App({
             : t('Это действие нельзя отменить');
   return (
     <div className="app-shell wallet-shell" aria-busy={loggingOut || undefined}>
+      {project.version.includes('-') && (
+        <p className="preview-notice">Предварительная версия {project.version} · тестовые данные</p>
+      )}
       <a className="skip-link" href="#content">
         {t('Перейти к содержимому')}{' '}
       </a>
@@ -241,10 +271,11 @@ export function App({
           month={month}
           direction={direction}
           months={months}
-          totalStudents={students.length}
           ready={ready}
           onMonthChange={selectMonth}
           groupName={group?.name ?? ''}
+          onStaff={canManageStaff ? () => showModal({ type: 'staff' }) : undefined}
+          onProfile={() => showModal({ type: 'profile' })}
           onCreateGroup={createGroup}
           onEditGroup={editGroup}
           onSelectGroup={changeGroup}
@@ -425,8 +456,8 @@ export function App({
                             ? 'Нет групп'
                             : !students.length
                               ? 'Нет учеников'
-                              : future
-                                ? 'Месяц ещё не начался'
+                              : beforeTraining
+                                ? 'Обучение ещё не началось'
                                 : 'Нет учеников по фильтру',
                         )}
                         action={
@@ -435,7 +466,8 @@ export function App({
                             onClick={() => {
                               if (!group) createGroup();
                               else if (!students.length) showModal({ type: 'student' });
-                              else if (future) selectMonth(currentMonth());
+                              else if (beforeTraining && firstTeachingMonth)
+                                selectMonth(firstTeachingMonth);
                               else setPaymentStatus('all');
                             }}
                           >
@@ -444,8 +476,8 @@ export function App({
                                 ? 'Создать группу'
                                 : !students.length
                                   ? 'Добавить ученика'
-                                  : future
-                                    ? 'Текущий месяц'
+                                  : beforeTraining
+                                    ? 'К началу обучения'
                                     : 'Показать всех',
                             )}
                           </button>
@@ -570,7 +602,6 @@ export function App({
                                   <button
                                     className="icon-button pay-icon"
                                     aria-label={`${t('Внести оплату')}: ${student.name}`}
-                                    disabled={future}
                                     onClick={() =>
                                       showModal({ type: 'payment', studentId: student.id })
                                     }
@@ -626,8 +657,16 @@ export function App({
         hidden={sheetOpen}
       />
       <Sheet open={sheetOpen} title={modalTitle} description={modalDescription} onClose={close}>
+        {modal?.type === 'staff' && <StaffPanel groups={groups} />}
+        {modal?.type === 'profile' && <ProfilePanel onLogout={onLogout} />}
         {modal?.type === 'payment' && (
-          <PaymentForm students={students} initialId={modal.studentId} onSaved={saved} />
+          <PaymentForm
+            students={students}
+            groups={groups}
+            initialMonth={month}
+            initialId={modal.studentId}
+            onSaved={saved}
+          />
         )}
         {modal?.type === 'student' && (
           <StudentForm

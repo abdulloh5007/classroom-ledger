@@ -51,11 +51,16 @@ export const courseEnrollmentSchema = legacyStudentSchema.pick({ name: true, pho
   courseId: z.coerce.number().int().positive('Выберите курс').max(Number.MAX_SAFE_INTEGER),
 });
 export const groupSchema = z
-  .object({ name: z.string().trim().min(1, 'Введите название группы').max(80), courseId: idSchema })
+  .object({
+    name: z.string().trim().min(1, 'Введите название группы').max(80),
+    courseId: idSchema,
+    startsOn: dateSchema.optional(),
+  })
   .strict();
 export const groupPatchSchema = z
   .object({
     name: groupSchema.shape.name.optional(),
+    startsOn: dateSchema.optional(),
     courseName: courseSchema.shape.name.optional(),
     monthlyAmount: moneySchema.optional(),
   })
@@ -65,6 +70,7 @@ export const studentEnrollmentSchema = legacyStudentSchema
   .pick({ name: true, phone: true })
   .extend({
     groupId: z.coerce.number().int().positive('Выберите группу').max(Number.MAX_SAFE_INTEGER),
+    enrolledOn: dateSchema.optional(),
   });
 export const studentSchema = z.union([
   studentEnrollmentSchema,
@@ -78,9 +84,41 @@ export const studentPatchSchema = z
     legacyStudentSchema.partial(),
   ])
   .refine((value) => Object.keys(value).length > 0, 'Нет полей для изменения');
-export const paymentSchema = z.object({ amount: moneySchema, date: dateSchema }).strict();
+export const allocationSchema = z.object({ month: monthSchema, amount: moneySchema }).strict();
+export const paymentSchema = z
+  .object({
+    amount: moneySchema,
+    date: dateSchema,
+    billingMonth: monthSchema.optional(),
+    allocations: z.array(allocationSchema).min(1).max(24).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.allocations && value.billingMonth)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['billingMonth'],
+        message: 'Выберите один способ распределения оплаты',
+      });
+    if (value.allocations) {
+      const sum = value.allocations.reduce((total, item) => total + item.amount, 0);
+      if (!Number.isSafeInteger(sum) || sum !== value.amount)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['amount'],
+          message: 'Распределение должно совпадать с общей суммой',
+        });
+      if (new Set(value.allocations.map((item) => item.month)).size !== value.allocations.length)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['allocations'],
+          message: 'Месяцы не должны повторяться',
+        });
+    }
+  });
 export type StudentInput = z.infer<typeof studentSchema>;
 export interface Group {
+  startsOn: string | null;
   id: number;
   name: string;
   courseId: number;
@@ -100,6 +138,7 @@ export interface Course {
   createdAt: string;
 }
 export interface Student {
+  enrolledOn: string | null;
   id: number;
   name: string;
   phone: string;
@@ -111,6 +150,7 @@ export interface Student {
   createdAt: string;
 }
 export interface Payment {
+  allocations?: { month: string; amount: number }[];
   id: number;
   studentId: number;
   amount: number;
@@ -150,3 +190,39 @@ export interface Admin {
   addedBy: number;
   createdAt: string;
 }
+
+export const roleSchema = z.enum(['teacher', 'admin', 'owner']);
+export type Role = z.infer<typeof roleSchema>;
+export interface StaffUser {
+  id: number;
+  username: string;
+  name: string;
+  role: Role;
+  active: boolean;
+  mustChangePassword: boolean;
+  telegramId: number | null;
+  groupIds: number[];
+  createdAt: string;
+}
+export const staffCreateSchema = z
+  .object({
+    username: z
+      .string()
+      .trim()
+      .regex(/^[a-zA-Z0-9_.-]{3,64}$/, 'Логин: 3–64 латинских символа'),
+    name: z.string().trim().min(1).max(100),
+    role: z.enum(['teacher', 'admin']),
+    password: z.string().min(8, 'Минимум 8 символов').max(128),
+    telegramId: idSchema.nullable().optional(),
+    groupIds: z.array(idSchema).max(500).default([]),
+  })
+  .strict();
+export const staffPatchSchema = staffCreateSchema
+  .omit({ password: true })
+  .partial()
+  .extend({
+    active: z.boolean().optional(),
+    password: z.string().min(8).max(128).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, 'Нет изменений');

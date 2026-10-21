@@ -1,3 +1,5 @@
+import { AccountService } from '../src/services/accounts.js';
+import { currentMonth, shiftMonth } from '../src/calendar.js';
 import { z } from 'zod';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Update } from 'grammy/types';
@@ -492,6 +494,7 @@ it('карточка и шаг суммы сохраняют месяц, стр�
   for (let index = 0; index < 7; index++)
     service.createStudent({
       name: `Student ${index}`,
+      enrolledOn: '2026-09-01',
       phone: '+998901234567',
       groupId: student.groupId,
     });
@@ -622,4 +625,96 @@ it('только владелец управляет одноразовым пр
   expect(service.nextAdminEnrollment(owner).enabled).toBe(true);
   await bot.handleUpdate(callback(owner, action('admin:next:off')));
   expect(service.nextAdminEnrollment(owner).enabled).toBe(false);
+});
+
+it('v2: учитель видит только свои группы, чужая кнопка не проводит оплату', async () => {
+  const own = sumStudent();
+  const course = service.course(own.courseId);
+  const other = service.createGroup({ name: 'Private other', courseId: course.id });
+  const foreign = service.createStudent({
+    name: 'Hidden student',
+    phone: '+998901234567',
+    groupId: other.id,
+  });
+  const accounts = new AccountService(db);
+  const primary = accounts.bootstrap('fixture-owner', 'fixture-owner-password', owner);
+  const teacher = accounts.create(primary.id, {
+    username: 'fixture-teacher',
+    name: 'Teacher',
+    password: 'fixture-temporary-password',
+    role: 'teacher',
+    telegramId: outsider,
+    groupIds: [own.groupId],
+  });
+  await bot.handleUpdate(message(outsider, '/start'));
+  expect(String(calls.find((call) => call.method === 'sendMessage')?.payload.text)).toContain(
+    'Учитель',
+  );
+  await bot.handleUpdate(message(outsider, '/groups'));
+  expect(String(calls.at(-1)?.payload.text)).not.toContain(other.name);
+  await bot.handleUpdate(message(outsider, `/pay ${foreign.id} 100`));
+  expect(service.payments(foreign.id)).toEqual([]);
+  accounts.update(primary.id, teacher.id, { active: false });
+  await bot.handleUpdate(message(outsider, `/pay ${own.id} 100`));
+  expect(service.payments(own.id)).toEqual([]);
+});
+it('v2: выбор будущего периода меняет месяц зачёта, старое подтверждение не действует', async () => {
+  const student = sumStudent();
+  await bot.handleUpdate(callback(owner, `student:${student.id}`));
+  await bot.handleUpdate(callback(owner, action('pay:')));
+  const stale = action('confirm:');
+  await bot.handleUpdate(callback(owner, action('amount:')));
+  const next = lastButtons().find(
+    (button) => button.callback_data?.startsWith('period:') && button.callback_data.endsWith(':1'),
+  )?.callback_data;
+  expect(next).toBeDefined();
+  await bot.handleUpdate(callback(owner, next!));
+  expect(String(calls.at(-1)?.payload.text)).toContain(shiftMonth(currentMonth(), 1));
+  await bot.handleUpdate(callback(owner, stale));
+  expect(service.payments(student.id)).toEqual([]);
+  await bot.handleUpdate(callback(owner, action('pay:')));
+  await bot.handleUpdate(callback(owner, action('confirm:')));
+  const payment = service.payments(student.id)[0]!;
+  expect(payment.allocations?.[0]?.month).toBe(shiftMonth(currentMonth(), 1));
+  expect(payment.date.slice(0, 7)).toBe(currentMonth());
+  expect(service.balance(student.id, currentMonth()).paid).toBe(0);
+});
+it('v2: параллельные Telegram-обновления сохраняют отдельную область доступа', async () => {
+  const first = sumStudent();
+  const course = service.course(first.courseId);
+  const group = service.createGroup({ name: 'Second teacher group', courseId: course.id });
+  const second = service.createStudent({
+    name: 'Second private name',
+    phone: '+998901234567',
+    groupId: group.id,
+  });
+  const accounts = new AccountService(db);
+  const primary = accounts.bootstrap('parallel-owner', 'parallel-owner-password', owner);
+  accounts.create(primary.id, {
+    username: 'teacher-a',
+    name: 'A',
+    password: 'temporary-password-a',
+    role: 'teacher',
+    telegramId: 456,
+    groupIds: [first.groupId],
+  });
+  accounts.create(primary.id, {
+    username: 'teacher-b',
+    name: 'B',
+    password: 'temporary-password-b',
+    role: 'teacher',
+    telegramId: 789,
+    groupIds: [group.id],
+  });
+  await Promise.all([
+    bot.handleUpdate(message(456, '/students')),
+    bot.handleUpdate(message(789, '/students')),
+  ]);
+  const replies = calls.filter((call) => call.method === 'sendMessage');
+  expect(String(replies.find((call) => call.payload.chat_id === 456)?.payload.text)).not.toContain(
+    second.name,
+  );
+  expect(String(replies.find((call) => call.payload.chat_id === 789)?.payload.text)).not.toContain(
+    first.name,
+  );
 });

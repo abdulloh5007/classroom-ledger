@@ -1,6 +1,6 @@
 {
   "name": "ecomdev-tuition-ledger",
-  "version": "1.3.0",
+  "version": "2.0.0-beta.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "seed:preview": "tsx scripts/seed-preview.ts"
   },
   "dependencies": {
     "@fastify/middie": "9.3.5",

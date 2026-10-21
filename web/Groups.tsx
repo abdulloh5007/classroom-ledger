@@ -1,3 +1,6 @@
+import { DateField } from './DateField';
+import { today } from '../src/calendar';
+import { usePermissions } from './Session';
 import { moneyInput, parseMoneyInput } from '../src/money';
 import { useState, type FormEvent } from 'react';
 import { Check, Plus, Trash2 } from 'lucide-react';
@@ -6,7 +9,7 @@ import { api, ApiError } from './api';
 import { AmountField, ConfirmDelete, Spinner, StudentSelect, Tip } from './components';
 import { useI18n } from './i18n';
 
-export type GroupDraft = { name: string; courseId: string };
+export type GroupDraft = { name: string; courseId: string; startsOn: string };
 
 export function GroupForm({
   draft,
@@ -22,14 +25,15 @@ export function GroupForm({
   onCreateCourse: () => void;
 }) {
   const { t, formatMoney } = useI18n();
-  const { name, courseId } = draft;
+  const { canManageCourses } = usePermissions();
+  const { name, courseId, startsOn } = draft;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const parsed = groupSchema.safeParse({ name, courseId: Number(courseId) });
+    const parsed = groupSchema.safeParse({ name, courseId: Number(courseId), startsOn });
     if (!parsed.success) {
       setErrors({
         ...parsed.error.flatten().fieldErrors,
@@ -75,6 +79,13 @@ export function GroupForm({
             </span>
           )}
         </label>
+        <DateField
+          id="group-start"
+          label="Начало обучения"
+          value={startsOn}
+          onChange={(value) => onDraftChange({ ...draft, startsOn: value })}
+          error={errors.startsOn?.[0]}
+        />
         <div className="field">
           <StudentSelect
             id="group-course"
@@ -102,14 +113,16 @@ export function GroupForm({
             {busy ? <Spinner /> : <Check size={18} />}
             {t(busy ? 'Сохраняем…' : 'Создать группу')}
           </button>
-          <button
-            className="button secondary round-action"
-            type="button"
-            onClick={onCreateCourse}
-            aria-label={t('Добавить курс')}
-          >
-            <Plus size={20} />
-          </button>
+          {canManageCourses && (
+            <button
+              className="button secondary round-action"
+              type="button"
+              onClick={onCreateCourse}
+              aria-label={t('Добавить курс')}
+            >
+              <Plus size={20} />
+            </button>
+          )}
         </div>
       </fieldset>
     </form>
@@ -126,6 +139,9 @@ export function GroupEditor({
   onDeleted: () => void;
 }) {
   const { t } = useI18n();
+  const { canManageCourses } = usePermissions();
+  const [startsOn, setStartsOn] = useState(group.startsOn ?? today());
+  const [confirmStart, setConfirmStart] = useState(Boolean(group.startsOn));
   const [name, setName] = useState(group.name);
   const [amount, setAmount] = useState(moneyInput(group.monthlyAmount, group.currency));
   const [busy, setBusy] = useState(false);
@@ -137,7 +153,8 @@ export function GroupEditor({
     if (busy) return;
     const parsed = groupPatchSchema.safeParse({
       name,
-      monthlyAmount: parseMoneyInput(amount, group.currency),
+      ...(confirmStart ? { startsOn } : {}),
+      ...(canManageCourses ? { monthlyAmount: parseMoneyInput(amount, group.currency) } : {}),
     });
     if (!parsed.success) {
       setErrors(parsed.error.flatten().fieldErrors);
@@ -198,18 +215,44 @@ export function GroupEditor({
             <span>{t('Название курса')}</span>
             <input id="edit-course-name" value={group.courseName} readOnly />
           </label>
-          <AmountField
-            id="edit-group-amount"
-            label={t('Оплата в месяц')}
-            hint={`${t('Новая стоимость действует со следующего месяца. История и тарифы прошлых месяцев сохраняются.')} ${t('Изменения курса применяются ко всем его группам.')}`}
-            value={amount}
-            currency={group.currency}
-            onChange={(value) => {
-              setAmount(value);
-              setErrors({});
-            }}
-            error={errors.monthlyAmount?.[0]}
-          />
+          {!group.startsOn && (
+            <label className="staff-check">
+              <input
+                type="checkbox"
+                checked={confirmStart}
+                onChange={(event) => setConfirmStart(event.target.checked)}
+              />
+              <span>Указать фактическое начало обучения</span>
+            </label>
+          )}
+          {confirmStart && (
+            <DateField
+              id="edit-group-start"
+              label="Начало обучения"
+              value={startsOn}
+              onChange={setStartsOn}
+              error={errors.startsOn?.[0]}
+            />
+          )}
+          {!group.startsOn && (
+            <p className="form-hint">
+              Дата старой группы не подтверждена. Укажите фактическое начало.
+            </p>
+          )}
+          {canManageCourses && (
+            <AmountField
+              id="edit-group-amount"
+              label={t('Оплата в месяц')}
+              hint={`${t('Новая стоимость действует со следующего месяца. История и тарифы прошлых месяцев сохраняются.')} ${t('Изменения курса применяются ко всем его группам.')}`}
+              value={amount}
+              currency={group.currency}
+              onChange={(value) => {
+                setAmount(value);
+                setErrors({});
+              }}
+              error={errors.monthlyAmount?.[0]}
+            />
+          )}
           {error && !confirm && (
             <p className="error-message" role="alert">
               {t(error)}

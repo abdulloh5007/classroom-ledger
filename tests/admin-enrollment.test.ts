@@ -104,7 +104,7 @@ it('миграция v7→v8 сохраняет учеников, платежи
     stored.close();
     stored = openDatabase(path);
     const migrated = new LedgerService(stored, owner);
-    expect(stored.pragma('user_version', { simple: true })).toBe(8);
+    expect(stored.pragma('user_version', { simple: true })).toBe(10);
     expect(migrated.students()).toEqual(students);
     expect(migrated.payments(student.id)).toEqual(payments);
     expect(migrated.admins()).toEqual(admins);

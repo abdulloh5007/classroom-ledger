@@ -13,11 +13,12 @@ export const WalletHero = memo(function WalletHero({
   month,
   direction,
   months,
-  totalStudents,
   ready,
   onMonthChange,
   groupName,
   onCreateGroup,
+  onStaff,
+  onProfile,
   onEditGroup,
   onSelectGroup,
   groups,
@@ -27,11 +28,12 @@ export const WalletHero = memo(function WalletHero({
   month: string;
   direction: number;
   months: Record<string, Debtor[]>;
-  totalStudents: number;
   ready: boolean;
   onMonthChange: (month: string) => void;
   groupName: string;
   onCreateGroup: () => void;
+  onStaff?: () => void;
+  onProfile?: () => void;
   onEditGroup: () => void;
   onSelectGroup: (id: number) => void;
   groups: Group[];
@@ -83,6 +85,8 @@ export const WalletHero = memo(function WalletHero({
         </div>
         <GroupMenu
           onCreate={onCreateGroup}
+          onStaff={onStaff}
+          onProfile={onProfile}
           onSelect={onSelectGroup}
           groups={groups}
           activeId={groupId}
@@ -134,12 +138,16 @@ export const WalletHero = memo(function WalletHero({
                 const relative = Math.abs(
                   offset + drag / ((carousel.current?.clientWidth ?? 390) * 0.76 * 0.75),
                 );
-                const rows =
-                  key <= currentMonth() ? months[key]?.filter((row) => row.debt > 0) : undefined;
+                const rows = months[key]?.filter((row) =>
+                  key > currentMonth() ? row.paid > 0 : row.debt > 0,
+                );
                 const amount =
                   rows && ready
                     ? moneyNumber(
-                        rows.reduce((sum, row) => sum + row.debt, 0),
+                        rows.reduce(
+                          (sum, row) => sum + (key > currentMonth() ? row.paid : row.debt),
+                          0,
+                        ),
                         currency,
                       )
                     : '—';
@@ -180,8 +188,10 @@ export const WalletHero = memo(function WalletHero({
                       className="wallet-debtor-count"
                       data-testid={offset === 0 ? 'wallet-count' : undefined}
                     >
-                      {t('Должники')}{' '}
-                      <b>{rows && ready ? `${rows.length} / ${totalStudents}` : '— / —'}</b>
+                      {t(key > currentMonth() ? 'Предоплата' : 'Должники')}{' '}
+                      <b>
+                        {rows && ready ? `${rows.length} / ${months[key]?.length ?? 0}` : '— / —'}
+                      </b>
                     </span>
                   </motion.div>
                 );
@@ -202,13 +212,16 @@ export const WalletHero = memo(function WalletHero({
         ))}
         <span className="sr-only" role="status">
           {future
-            ? t('Будущий месяц: данных пока нет')
+            ? `${monthLabel(month)}: предоплата ${formatMoney(
+                (months[month] ?? []).reduce((sum, row) => sum + row.paid, 0),
+                currency,
+              )}`
             : !months[month] || !ready
               ? t('Загрузка сводки')
               : `${monthLabel(month)}: ${formatMoney(
                   months[month]!.reduce((sum, row) => sum + row.debt, 0),
                   currency,
-                )}, ${t('Должники')} ${months[month]!.filter((row) => row.debt > 0).length} / ${totalStudents}`}
+                )}, ${t('Должники')} ${months[month]!.filter((row) => row.debt > 0).length} / ${months[month]?.length ?? 0}`}
         </span>
       </motion.section>
     </>

@@ -21,6 +21,7 @@ function fixture() {
     name: 'Test',
     phone: '+998901234567',
     groupId: group.id,
+    enrolledOn: shiftMonth(currentMonth(), -1) + '-01',
   });
   return { course, group, student };
 }

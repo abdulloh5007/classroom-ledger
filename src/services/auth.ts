@@ -1,32 +1,34 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { AppError } from '../errors.js';
-
+import { AccountService, passwordHash, passwordMatches } from './accounts.js';
+import type { StaffUser } from '../contracts.js';
 export interface WebAuth {
   username: string;
   password: string;
 }
-export const SESSION_COOKIE = 'ledger_session';
+export const SESSION_COOKIE = 'ledger_v2_session';
 export const SESSION_SECONDS = 12 * 60 * 60;
-const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
-
+const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+let dummyPasswordHash: string | undefined;
 export class AuthService {
-  private readonly credentialVersion: string;
+  public readonly accounts: AccountService;
   constructor(
     private readonly db: Database.Database,
-    private readonly credentials: WebAuth,
+    credentials: WebAuth,
+    ownerTelegramId?: number,
   ) {
-    this.credentialVersion = hash(JSON.stringify([credentials.username, credentials.password]));
+    this.accounts = new AccountService(db);
+    this.accounts.bootstrap(credentials.username, credentials.password, ownerTelegramId);
   }
   login(username: string, password: string, client: string): string {
     const now = Date.now();
-    // One account exists: a shared limit also covers rotated IPs and random usernames.
-    const keys = [`ip:${hash(client)}`, `account:${this.credentialVersion}`];
-    this.db.prepare('DELETE FROM login_attempts WHERE expires_at <= ?').run(now);
+    const keys = [`ip:${hash(client)}`, 'account:staff-login'];
+    this.db.prepare('DELETE FROM login_attempts WHERE expires_at<=?').run(now);
     const attempts = keys.map(
       (key) =>
         this.db
-          .prepare('SELECT count, expires_at AS expiresAt FROM login_attempts WHERE key=?')
+          .prepare('SELECT count,expires_at AS expiresAt FROM login_attempts WHERE key=?')
           .get(key) as { count: number; expiresAt: number } | undefined,
     );
     const blocked = attempts.find(
@@ -36,49 +38,56 @@ export class AuthService {
       throw new AppError(429, 'Слишком много попыток входа. Попробуйте позже.', {
         retryAfter: Math.max(1, Math.ceil((blocked.expiresAt - now) / 1000)),
       });
-    const actual = Buffer.from(hash(JSON.stringify([username, password])), 'hex');
-    if (!timingSafeEqual(actual, Buffer.from(this.credentialVersion, 'hex'))) {
+    const row = this.db
+      .prepare(
+        'SELECT id,password_hash AS hash,active,session_version AS version FROM staff_users WHERE username=? COLLATE NOCASE',
+      )
+      .get(username) as { id: number; hash: string; active: number; version: number } | undefined;
+    dummyPasswordHash ??= passwordHash(randomBytes(24).toString('hex'));
+    const valid = passwordMatches(password, row?.hash ?? dummyPasswordHash);
+    if (!row || !row.active || !valid) {
       this.db.transaction(() => {
-        keys.forEach((key) =>
+        for (const key of keys)
           this.db
             .prepare(
-              `
-          INSERT INTO login_attempts(key, count, expires_at) VALUES (?, 1, ?)
-          ON CONFLICT(key) DO UPDATE SET count=count+1
-        `,
+              'INSERT INTO login_attempts(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1',
             )
-            .run(key, now + 15 * 60_000),
-        );
+            .run(key, now + 15 * 60_000);
       })();
       throw new AppError(401, 'Неверный логин или пароль');
     }
-    this.db.prepare('DELETE FROM login_attempts WHERE key IN (?, ?)').run(...keys);
+    this.db.prepare('DELETE FROM login_attempts WHERE key IN (?,?)').run(...keys);
     const token = randomBytes(32).toString('base64url');
     this.db.transaction(() => {
       this.db
-        .prepare('DELETE FROM web_sessions WHERE expires_at <= ? OR credential_version != ?')
-        .run(now, this.credentialVersion);
+        .prepare(
+          'DELETE FROM web_sessions WHERE expires_at<=? OR (user_id=? AND credential_version<>?)',
+        )
+        .run(now, row.id, String(row.version));
       this.db
         .prepare(
-          'INSERT INTO web_sessions(token_hash, credential_version, expires_at) VALUES (?, ?, ?)',
+          'INSERT INTO web_sessions(token_hash,credential_version,expires_at,user_id) VALUES(?,?,?,?)',
         )
-        .run(hash(token), this.credentialVersion, now + SESSION_SECONDS * 1000);
+        .run(hash(token), String(row.version), now + SESSION_SECONDS * 1000, row.id);
       this.db
         .prepare(
-          'DELETE FROM web_sessions WHERE token_hash NOT IN (SELECT token_hash FROM web_sessions ORDER BY expires_at DESC, rowid DESC LIMIT 20)',
+          'DELETE FROM web_sessions WHERE user_id=? AND token_hash NOT IN (SELECT token_hash FROM web_sessions WHERE user_id=? ORDER BY expires_at DESC,rowid DESC LIMIT 20)',
         )
-        .run();
+        .run(row.id, row.id);
     })();
     return token;
   }
-  username(token: string | undefined): string | null {
+  user(token: string | undefined): StaffUser | null {
     if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-    const session = this.db
+    const row = this.db
       .prepare(
-        'SELECT 1 FROM web_sessions WHERE token_hash=? AND credential_version=? AND expires_at>?',
+        'SELECT u.id FROM web_sessions s JOIN staff_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND s.credential_version=CAST(u.session_version AS TEXT) AND u.active=1',
       )
-      .get(hash(token), this.credentialVersion, Date.now());
-    return session ? this.credentials.username : null;
+      .get(hash(token), Date.now()) as { id: number } | undefined;
+    return row ? this.accounts.user(row.id) : null;
+  }
+  username(token: string | undefined): string | null {
+    return this.user(token)?.username ?? null;
   }
   logout(token: string | undefined): void {
     if (token) this.db.prepare('DELETE FROM web_sessions WHERE token_hash=?').run(hash(token));

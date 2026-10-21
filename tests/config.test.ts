@@ -23,3 +23,15 @@ it('отклоняет пароль короче шести символов', a
 it('пустой пароль сохраняет локальный режим без входа', async () => {
   expect((await load('WEB_PASSWORD=\n')).webAuth).toBeUndefined();
 });
+
+it('preview запрещает запуск рабочего бота', async () => {
+  await expect(load('BOT_TOKEN=12345:fake-for-test\nOWNER_ID=123\n')).rejects.toThrow('preview');
+});
+it('preview запрещает путь рабочей или внешней базы', async () => {
+  for (const path of ['./data/app.db', '../data/preview.db', '/tmp/preview.db'])
+    await expect(load('DB_PATH=' + path + '\n')).rejects.toThrow('отдельную БД');
+});
+
+it('production не допускает случайного запуска без пароля', async () => {
+  await expect(load('APP_STAGE=production\nWEB_PASSWORD=\n')).rejects.toThrow('WEB_PASSWORD');
+});

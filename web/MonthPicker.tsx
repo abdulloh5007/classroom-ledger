@@ -3,7 +3,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
-import { currentMonth, today } from '../src/calendar';
+import { today } from '../src/calendar';
 
 const ROW = 44;
 function Wheel({
@@ -191,8 +191,14 @@ export function MonthPicker({
   className,
   id,
   compact = false,
+  controlLabel,
+  min,
+  max,
 }: {
   compact?: boolean;
+  controlLabel?: string;
+  min?: string;
+  max?: string;
   date?: string;
   onDateChange?: (date: string) => void;
   className?: string;
@@ -209,7 +215,21 @@ export function MonthPicker({
   const [number, setNumber] = useState(Number(month.slice(5)));
   const [resetVersion, setResetVersion] = useState(0);
   const reduced = useReducedMotion();
-  const maxDay = new Date(Date.UTC(year, number, 0)).getUTCDate();
+  const minimum = min ?? '1900-01-01',
+    maximum = max ?? '9999-11-30';
+  const minYear = Number(minimum.slice(0, 4)),
+    maxYear = Number(maximum.slice(0, 4));
+  const selectedYear = Math.max(minYear, Math.min(maxYear, year));
+  const minMonth = selectedYear === minYear ? Number(minimum.slice(5, 7)) : 1;
+  const maxMonth = selectedYear === maxYear ? Number(maximum.slice(5, 7)) : 12;
+  const selectedMonth = Math.max(minMonth, Math.min(maxMonth, number));
+  const selectedPeriod = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+  const minDay =
+    selectedPeriod === minimum.slice(0, 7) && minimum.length === 10 ? Number(minimum.slice(8)) : 1;
+  const maxDay = Math.min(
+    new Date(Date.UTC(selectedYear, selectedMonth, 0)).getUTCDate(),
+    selectedPeriod === maximum.slice(0, 7) && maximum.length === 10 ? Number(maximum.slice(8)) : 31,
+  );
   const label = date
     ? new Intl.DateTimeFormat(locale, {
         day: 'numeric',
@@ -237,11 +257,13 @@ export function MonthPicker({
         type="button"
         id={id}
         className={className ?? 'wallet-month'}
-        aria-label={`${date ? t('Выбрать дату') : t('Выбрать месяц')}: ${label}`}
+        aria-label={controlLabel ?? `${date ? t('Выбрать дату') : t('Выбрать месяц')}: ${label}`}
+        aria-describedby={controlLabel && id ? `${id}-value` : undefined}
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
             key={date ?? month}
+            id={id ? `${id}-value` : undefined}
             className="month-label"
             initial={{ opacity: 0, x: reduced ? 0 : direction * 8 }}
             animate={{ opacity: 1, x: 0 }}
@@ -287,8 +309,8 @@ export function MonthPicker({
                   {date && (
                     <Wheel
                       label={t('День')}
-                      value={Math.min(day, maxDay)}
-                      min={1}
+                      value={Math.max(minDay, Math.min(day, maxDay))}
+                      min={minDay}
                       max={maxDay}
                       onChange={setDay}
                       resetVersion={resetVersion}
@@ -296,9 +318,9 @@ export function MonthPicker({
                   )}
                   <Wheel
                     label={t('Месяц')}
-                    value={number}
-                    min={1}
-                    max={year === 9999 ? 11 : 12}
+                    value={selectedMonth}
+                    min={minMonth}
+                    max={maxMonth}
                     format={(value) =>
                       new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' }).format(
                         new Date(Date.UTC(2026, value - 1, 1)),
@@ -309,9 +331,9 @@ export function MonthPicker({
                   />
                   <Wheel
                     label={t('Год')}
-                    value={year}
-                    min={1900}
-                    max={9999}
+                    value={selectedYear}
+                    min={minYear}
+                    max={maxYear}
                     resetVersion={resetVersion}
                     onChange={(value) => {
                       setYear(value);
@@ -324,11 +346,14 @@ export function MonthPicker({
                     type="button"
                     className="button secondary"
                     onClick={() => {
-                      const now = currentMonth();
+                      const current = today();
+                      const bounded =
+                        current < minimum ? minimum : current > maximum ? maximum : current;
+                      const now = bounded.slice(0, 7);
                       setResetVersion((value) => value + 1);
                       setYear(Number(now.slice(0, 4)));
                       setNumber(Number(now.slice(5)));
-                      setDay(Number(today().slice(8)));
+                      setDay(Number(bounded.slice(8) || 1));
                     }}
                   >
                     {t('Текущий')}{' '}
@@ -337,10 +362,10 @@ export function MonthPicker({
                     type="button"
                     className="button primary"
                     onClick={() => {
-                      const selected = `${year}-${String(number).padStart(2, '0')}`;
+                      const selected = selectedPeriod;
                       if (date && onDateChange)
                         onDateChange(
-                          `${selected}-${String(Math.min(day, maxDay)).padStart(2, '0')}`,
+                          `${selected}-${String(Math.max(minDay, Math.min(day, maxDay))).padStart(2, '0')}`,
                         );
                       else onChange(selected);
                       setOpen(false);

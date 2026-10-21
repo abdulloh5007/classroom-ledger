@@ -9,7 +9,7 @@ export function openDatabase(path: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
   const version = db.pragma('user_version', { simple: true }) as number;
-  if (version > 8) {
+  if (version > 10) {
     db.close();
     throw new Error('Версия БД новее приложения');
   }
@@ -215,6 +215,76 @@ export function openDatabase(path: string): Database.Database {
         );
         PRAGMA user_version=8;
       `);
+    })();
+  if (version < 9)
+    db.transaction(() => {
+      if (
+        !(db.pragma('table_info(student_groups)') as { name: string }[]).some(
+          (column) => column.name === 'starts_on',
+        )
+      )
+        db.exec('ALTER TABLE student_groups ADD COLUMN starts_on TEXT');
+      if (
+        !(db.pragma('table_info(students)') as { name: string }[]).some(
+          (column) => column.name === 'enrolled_on',
+        )
+      )
+        db.exec('ALTER TABLE students ADD COLUMN enrolled_on TEXT');
+      db.exec(`
+      CREATE TABLE IF NOT EXISTS payment_allocations (
+        payment_id INTEGER NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+        billing_month TEXT NOT NULL,
+        amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount>0),
+        PRIMARY KEY(payment_id,billing_month)
+      );
+      CREATE INDEX IF NOT EXISTS allocations_period ON payment_allocations(billing_month,payment_id);
+      INSERT INTO payment_allocations(payment_id,billing_month,amount) SELECT id,substr(paid_at,1,7),amount FROM payments WHERE NOT EXISTS(SELECT 1 FROM payment_allocations a WHERE a.payment_id=payments.id);
+      CREATE TRIGGER IF NOT EXISTS payment_default_allocation AFTER INSERT ON payments BEGIN
+        INSERT INTO payment_allocations(payment_id,billing_month,amount) VALUES(NEW.id,substr(NEW.paid_at,1,7),NEW.amount);
+      END;
+      PRAGMA user_version=9;
+    `);
+    })();
+  if (version < 10)
+    db.transaction(() => {
+      db.exec(`
+      CREATE TABLE IF NOT EXISTS staff_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE COLLATE NOCASE, name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('teacher','admin','owner')),
+        active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+        must_change_password INTEGER NOT NULL DEFAULT 1 CHECK(must_change_password IN (0,1)),
+        session_version INTEGER NOT NULL DEFAULT 1, bootstrap_managed INTEGER NOT NULL DEFAULT 0,
+        telegram_id INTEGER UNIQUE, created_by INTEGER REFERENCES staff_users(id),
+        created_at TEXT NOT NULL DEFAULT(strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS single_owner ON staff_users(role) WHERE role='owner';
+      CREATE TABLE IF NOT EXISTS staff_groups (
+        user_id INTEGER NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+        group_id INTEGER NOT NULL REFERENCES student_groups(id) ON DELETE CASCADE,
+        PRIMARY KEY(user_id,group_id)
+      );
+      CREATE TABLE IF NOT EXISTS audit_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id INTEGER REFERENCES staff_users(id) ON DELETE SET NULL,
+        action TEXT NOT NULL, target_type TEXT NOT NULL, target_id INTEGER,
+        details TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT(strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+      CREATE INDEX IF NOT EXISTS audit_created ON audit_events(id DESC);
+
+      PRAGMA user_version=10;
+    `);
+      if (
+        !(db.pragma('table_info(web_sessions)') as { name: string }[]).some(
+          (column) => column.name === 'user_id',
+        )
+      )
+        db.exec(
+          'ALTER TABLE web_sessions ADD COLUMN user_id INTEGER REFERENCES staff_users(id) ON DELETE CASCADE',
+        );
+      db.exec(
+        "DELETE FROM web_sessions WHERE user_id IS NULL; DELETE FROM login_attempts WHERE key LIKE 'account:%';",
+      );
     })();
   return db;
 }

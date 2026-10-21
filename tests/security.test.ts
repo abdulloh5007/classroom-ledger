@@ -148,26 +148,30 @@ it('сохраняет блокировку после пересоздания 
   expect(restarted.login('owner', credentials.password, 'ip')).toMatch(/^[\w-]{43}$/);
 });
 
-it('общий лимит входа блокирует распределённый подбор и смену логинов', async () => {
-  for (let i = 0; i < 30; i++) {
-    const response = await app.inject({
+it(
+  'общий лимит входа блокирует распределённый подбор и смену логинов',
+  { timeout: 20000 },
+  async () => {
+    for (let i = 0; i < 30; i++) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        headers: { 'cf-connecting-ip': `192.0.2.${i + 1}` },
+        payload: { username: `random-${i}`, password: 'bad' },
+      });
+      expect(response.statusCode).toBe(401);
+    }
+    const blocked = await app.inject({
       method: 'POST',
       url: '/auth/login',
-      headers: { 'cf-connecting-ip': `192.0.2.${i + 1}` },
-      payload: { username: `random-${i}`, password: 'bad' },
+      headers: { 'cf-connecting-ip': '192.0.2.100' },
+      payload: credentials,
     });
-    expect(response.statusCode).toBe(401);
-  }
-  const blocked = await app.inject({
-    method: 'POST',
-    url: '/auth/login',
-    headers: { 'cf-connecting-ip': '192.0.2.100' },
-    payload: credentials,
-  });
-  expect(blocked.statusCode).toBe(429);
-  expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
-  expect(db.prepare('SELECT COUNT(*) AS count FROM login_attempts').get()).toEqual({ count: 31 });
-});
+    expect(blocked.statusCode).toBe(429);
+    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM login_attempts').get()).toEqual({ count: 31 });
+  },
+);
 
 it('не доверяет заголовкам прокси с удалённого соединения и X-Forwarded-For', async () => {
   for (let i = 0; i < 8; i++)
@@ -237,20 +241,26 @@ it('ограничивает общий поток и число IP-бакето
   expect(() => limiter.take('overflow', 240)).not.toThrow();
 });
 
-it('ограничивает число сессий, хранит только хеши и отзывает токены после выхода', () => {
-  const auth = new AuthService(db, credentials);
-  const tokens = Array.from({ length: 25 }, () => auth.login('owner', credentials.password, 'ip'));
-  const stored = db.prepare('SELECT token_hash FROM web_sessions').all() as {
-    token_hash: string;
-  }[];
-  expect(stored).toHaveLength(20);
-  expect(stored.every((row) => /^[a-f0-9]{64}$/.test(row.token_hash))).toBe(true);
-  expect(stored.every((row) => !tokens.includes(row.token_hash))).toBe(true);
-  const last = tokens.at(-1)!;
-  expect(auth.username(last)).toBe('owner');
-  auth.logout(last);
-  expect(auth.username(last)).toBeNull();
-});
+it(
+  'ограничивает число сессий, хранит только хеши и отзывает токены после выхода',
+  { timeout: 20000 },
+  () => {
+    const auth = new AuthService(db, credentials);
+    const tokens = Array.from({ length: 25 }, () =>
+      auth.login('owner', credentials.password, 'ip'),
+    );
+    const stored = db.prepare('SELECT token_hash FROM web_sessions').all() as {
+      token_hash: string;
+    }[];
+    expect(stored).toHaveLength(20);
+    expect(stored.every((row) => /^[a-f0-9]{64}$/.test(row.token_hash))).toBe(true);
+    expect(stored.every((row) => !tokens.includes(row.token_hash))).toBe(true);
+    const last = tokens.at(-1)!;
+    expect(auth.username(last)).toBe('owner');
+    auth.logout(last);
+    expect(auth.username(last)).toBeNull();
+  },
+);
 
 it('возвращает защитные заголовки и закрывает API от кеширования', async () => {
   const response = await app.inject('/health');

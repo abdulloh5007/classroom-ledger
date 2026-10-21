@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Course, Debtor, Group, Student } from '../src/contracts';
-import { currentMonth, shiftMonth } from '../src/calendar';
+import { shiftMonth } from '../src/calendar';
 import { api } from './api';
 
 function initialGroup(): number | undefined {
@@ -46,7 +46,6 @@ export function useLedger(month: string) {
   const selectedMonth = useRef(month);
   selectedMonth.current = month;
   const loadMonth = useCallback((key: string): Promise<void> => {
-    if (key > currentMonth()) return Promise.resolve();
     if (pending.current.has(key)) return pending.current.get(key)!;
     const cached = cache.current.get(key);
     if (cached && Date.now() - cached.at < 60_000) return Promise.resolve();
@@ -167,6 +166,6 @@ export function useLedger(month: string) {
     monthError,
     reload,
     ready: studentsReady,
-    loading: !studentsReady || (month <= currentMonth() && !months[month]),
+    loading: !studentsReady || !months[month],
   };
 }

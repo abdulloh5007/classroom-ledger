@@ -1,10 +1,11 @@
+import { DateField } from './DateField';
 import { groupCaption } from './labels';
 import { moneyInput, parseMoneyInput } from '../src/money';
 import { useI18n } from './i18n';
 import { useEffect, useState, type FormEvent, type Dispatch, type SetStateAction } from 'react';
 import { ArrowDownLeft, Check, Trash2 } from 'lucide-react';
 import { paymentSchema, studentEnrollmentSchema, type Student, type Group } from '../src/contracts';
-import { today } from '../src/calendar';
+import { today, currentMonth, shiftMonth } from '../src/calendar';
 import { api, ApiError } from './api';
 import { AmountField, Spinner, StudentSelect } from './components';
 import { invalidateHistory, prefetchHistory, useHistory } from './history';
@@ -28,10 +29,14 @@ function fields(error: unknown): { message: string; fields: Record<string, strin
 export function PaymentForm({
   students,
   initialId,
+  initialMonth,
+  groups,
   onSaved,
 }: {
   students: Student[];
   initialId?: number;
+  initialMonth?: string;
+  groups: Group[];
   onSaved: (text: string) => void;
 }) {
   const { t, formatMoney } = useI18n();
@@ -39,25 +44,73 @@ export function PaymentForm({
   const [studentId, setStudentId] = useState(initialId ? String(initialId) : '');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(today());
+  const initialStudent = students.find((student) => student.id === initialId);
+  const initialFirst = [
+    initialStudent?.enrolledOn,
+    groups.find((group) => group.id === initialStudent?.groupId)?.startsOn,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1)
+    ?.slice(0, 7);
+  const [billingMonth, setBillingMonth] = useState(
+    initialFirst && initialFirst > (initialMonth ?? currentMonth())
+      ? initialFirst
+      : (initialMonth ?? currentMonth()),
+  );
+  const [monthCount, setMonthCount] = useState('1');
+  const selectedStudent = students.find((student) => String(student.id) === studentId);
+  const firstMonth = [
+    selectedStudent?.enrolledOn,
+    groups.find((group) => group.id === selectedStudent?.groupId)?.startsOn,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1)
+    ?.slice(0, 7);
+  const month = firstMonth && billingMonth < firstMonth ? firstMonth : billingMonth;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
-  const [balance, setBalance] = useState<{ key: string; paid: number; debt: number }>();
+  const [balance, setBalance] = useState<{
+    key: string;
+    paid: number;
+    debt: number;
+    parts: { month: string; paid: number; debt: number }[];
+  }>();
   const [balanceError, setBalanceError] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const month = date.slice(0, 7);
-  const balanceKey = `${studentId}/${month}`;
+  const balanceKey = `${studentId}/${month}/${monthCount}`;
   const currentBalance = balance?.key === balanceKey ? balance : undefined;
   useEffect(() => {
     if (!studentId) return;
     const controller = new AbortController();
     setBalanceError('');
     setBalance(undefined);
-    void api<{ paid: number; debt: number }>(`/students/${studentId}/balance?month=${month}`, {
-      signal: controller.signal,
-    })
-      .then((value) => {
-        if (!controller.signal.aborted) setBalance({ ...value, key: `${studentId}/${month}` });
+    let periods: string[];
+    try {
+      periods = Array.from({ length: Number(monthCount) }, (_, index) => shiftMonth(month, index));
+    } catch {
+      setBalanceError('Период выходит за границы календаря');
+      return () => controller.abort();
+    }
+    void Promise.all(
+      periods.map(async (period) => ({
+        ...(await api<{ paid: number; debt: number }>(
+          `/students/${studentId}/balance?month=${period}`,
+          { signal: controller.signal },
+        )),
+        month: period,
+      })),
+    )
+      .then((parts) => {
+        if (!controller.signal.aborted)
+          setBalance({
+            key: `${studentId}/${month}/${monthCount}`,
+            paid: parts.reduce((sum, item) => sum + item.paid, 0),
+            debt: parts.reduce((sum, item) => sum + item.debt, 0),
+            parts,
+          });
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted)
@@ -66,7 +119,7 @@ export function PaymentForm({
           );
       });
     return () => controller.abort();
-  }, [studentId, month, attempt, t]);
+  }, [studentId, month, monthCount, attempt, t]);
   const currency = students.find((student) => String(student.id) === studentId)?.currency ?? 'UZS';
   const numericAmount = parseMoneyInput(amount, currency) ?? 0;
   const projectedPaid = (currentBalance?.paid ?? 0) + numericAmount;
@@ -90,7 +143,19 @@ export function PaymentForm({
       });
       return;
     }
-    const parsed = paymentSchema.safeParse({ amount: parseMoneyInput(amount, currency), date });
+    let left = numericAmount;
+    const allocations = currentBalance.parts
+      .map((part) => {
+        const amount = Math.min(left, part.debt);
+        left -= amount;
+        return { month: part.month, amount };
+      })
+      .filter((part) => part.amount > 0);
+    const parsed = paymentSchema.safeParse({
+      amount: parseMoneyInput(amount, currency),
+      date,
+      ...(Number(monthCount) > 1 ? { allocations } : { billingMonth: month }),
+    });
     if (!parsed.success || !studentId) {
       setErrors({
         ...(!parsed.success ? parsed.error.flatten().fieldErrors : {}),
@@ -163,22 +228,66 @@ export function PaymentForm({
           error={errors.amount?.[0]}
         />
         <div className="field">
-          <label htmlFor="payment-date">{t('Дата оплаты')}</label>
+          <label htmlFor="payment-date">{t('Дата получения')}</label>
           <MonthPicker
             id="payment-date"
+            controlLabel={t('Дата получения')}
             className="payment-month"
-            month={month}
+            month={date.slice(0, 7)}
             direction={1}
             date={date}
+            max={today()}
             onChange={() => undefined}
             onDateChange={(next) => {
-              if (next.slice(0, 7) !== month) setAmount('');
               setDate(next);
               clearField(setErrors, 'date');
             }}
           />
           {errors.date && <span className="field-error">{t(errors.date[0]!)}</span>}
         </div>
+        <div className="field">
+          <label htmlFor="billing-month">За какой месяц</label>
+          <MonthPicker
+            id="billing-month"
+            controlLabel="За какой месяц"
+            className="payment-month"
+            month={month}
+            direction={1}
+            min={firstMonth}
+            onChange={(value) => {
+              setBillingMonth(value);
+              setAmount('');
+              clearField(setErrors, 'billingMonth');
+            }}
+          />
+          {errors.billingMonth?.[0] && (
+            <span role="alert" className="field-error">
+              {errors.billingMonth[0]}
+            </span>
+          )}
+        </div>
+        <div className="field">
+          {' '}
+          <StudentSelect
+            id="payment-month-count"
+            label="Количество месяцев"
+            value={monthCount}
+            onChange={(value) => {
+              setMonthCount(value);
+              setAmount('');
+            }}
+            options={Array.from({ length: 12 }, (_, index) => ({
+              value: String(index + 1),
+              label: String(index + 1),
+            }))}
+          />
+        </div>
+        {currentBalance && Number(monthCount) > 1 && (
+          <p className="form-hint">
+            Распределение по порядку: {currentBalance.parts.map((part) => part.month).join(', ')}.
+            Сначала закрывается более ранний месяц.
+          </p>
+        )}
         {currentBalance ? (
           <div className="payment-balance" aria-live="polite">
             <div className="payment-figures">
@@ -262,13 +371,26 @@ export function StudentForm({
   const [name, setName] = useState(student?.name ?? '');
   const [phone, setPhone] = useState(formatUzPhone(student?.phone ?? ''));
   const [groupId, setGroupId] = useState(String(student?.groupId ?? initialGroupId ?? ''));
+  const selectedGroup = groups.find((group) => String(group.id) === groupId);
+  const earliest = selectedGroup?.startsOn ?? undefined;
+  const [confirmEnrollment, setConfirmEnrollment] = useState(
+    !student || Boolean(student.enrolledOn),
+  );
+  const [enrolledOn, setEnrolledOn] = useState(
+    student?.enrolledOn ?? (earliest && earliest > today() ? earliest : today()),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const result = studentEnrollmentSchema.safeParse({ name, phone, groupId: Number(groupId) });
+    const result = studentEnrollmentSchema.safeParse({
+      name,
+      phone,
+      groupId: Number(groupId),
+      ...(confirmEnrollment ? { enrolledOn } : {}),
+    });
     if (uzPhoneDigits(phone).length !== 9) {
       setErrors({
         ...(!result.success ? result.error.flatten().fieldErrors : {}),
@@ -354,6 +476,8 @@ export function StudentForm({
             value={groupId}
             onChange={(value) => {
               setGroupId(value);
+              const start = groups.find((group) => String(group.id) === value)?.startsOn;
+              if (start && enrolledOn < start) setEnrolledOn(start);
               clearField(setErrors, 'groupId');
             }}
             options={groups.map((group) => ({
@@ -363,6 +487,26 @@ export function StudentForm({
             error={errors.groupId?.[0]}
           />
         </div>
+        {student && !student.enrolledOn && (
+          <label className="staff-check">
+            <input
+              type="checkbox"
+              checked={confirmEnrollment}
+              onChange={(event) => setConfirmEnrollment(event.target.checked)}
+            />
+            <span>Указать фактическую дату зачисления</span>
+          </label>
+        )}
+        {confirmEnrollment && (
+          <DateField
+            id="student-enrollment"
+            label="Дата зачисления"
+            value={enrolledOn}
+            min={earliest}
+            onChange={setEnrolledOn}
+            error={errors.enrolledOn?.[0]}
+          />
+        )}
         {!groups.length && (
           <button className="button secondary full" type="button" onClick={onCreateGroup}>
             {t('Создать группу')}
@@ -431,6 +575,11 @@ export function History({ student }: { student: Student }) {
                 {t('Оплата #')}
                 {payment.id}
               </small>
+              {payment.allocations?.map((part) => (
+                <small key={part.month}>
+                  За {part.month}: {formatMoney(part.amount, student.currency)}
+                </small>
+              ))}
             </div>
             <time dateTime={payment.date}>{payment.date.split('-').reverse().join('.')}</time>
           </div>

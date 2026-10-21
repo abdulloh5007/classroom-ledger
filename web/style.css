@@ -2418,3 +2418,91 @@ html.theme-revealing::view-transition-old(root) {
     padding: 18px;
   }
 }
+
+.staff-toolbar,
+.staff-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+.staff-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.staff-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--subtle);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  min-width: 0;
+}
+.staff-copy {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.staff-copy span,
+.staff-copy small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.staff-groups {
+  display: grid;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.staff-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px;
+  cursor: pointer;
+}
+.staff-check input {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+}
+.staff-check span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.staff-panel .button {
+  font-size: 14px;
+}
+.preview-notice {
+  margin: 0;
+  padding: 8px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--subtle);
+}
+
+/* Staff/profile actions must leave a scrollable list even on short screens. */
+.group-menu {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--radix-popover-content-available-height, calc(100dvh - 32px));
+}
+.group-menu-list {
+  min-height: 0;
+  flex: 0 1 auto;
+}
+.group-menu > button,
+.group-menu > a {
+  flex-shrink: 0;
+}

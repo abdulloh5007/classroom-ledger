@@ -1,3 +1,6 @@
+import type { StaffUser } from '../src/contracts';
+import { SessionContext } from './Session';
+import { PasswordChange } from './Staff';
 import { useI18n } from './i18n';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
@@ -206,6 +209,7 @@ export function Auth() {
   const { t, language } = useI18n();
 
   const [session, setSession] = useState<Session>();
+  const [profile, setProfile] = useState<StaffUser | null>();
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -230,6 +234,29 @@ export function Auth() {
     return () => window.removeEventListener('ledger:session-expired', expired);
   }, []);
   const authenticated = session && (!session.authenticationRequired || Boolean(session.username));
+  useEffect(() => {
+    setProfile(undefined);
+    if (!session?.username) {
+      setProfile(null);
+      return;
+    }
+    const abort = new AbortController();
+    void api<StaffUser | null>('/auth/profile', { signal: abort.signal })
+      .then((value) => {
+        if (abort.signal.aborted) return;
+        if (session.authenticationRequired && !value) {
+          invalidateHistory();
+          setSession({ authenticationRequired: true, username: null });
+          return;
+        }
+        setProfile(value);
+      })
+      .catch((error) => {
+        if (!abort.signal.aborted)
+          setError(error instanceof Error ? error.message : 'Не удалось загрузить профиль');
+      });
+    return () => abort.abort();
+  }, [session]);
   useEffect(() => {
     if (!session) return;
     const path = authenticated ? '/' : '/login';
@@ -279,14 +306,43 @@ export function Auth() {
         }}
       />
     );
+  if (profile === undefined)
+    return (
+      <main className="auth-loading">
+        {error ? (
+          <>
+            <p role="alert">{error}</p>
+            <button className="button secondary" onClick={() => setAttempt((value) => value + 1)}>
+              Повторить
+            </button>
+          </>
+        ) : (
+          <Spinner />
+        )}
+      </main>
+    );
+  if (profile?.mustChangePassword)
+    return (
+      <main className="auth-loading">
+        <section className="login-card">
+          <h1>Смените временный пароль</h1>
+          <PasswordChange
+            onChanged={() => {
+              invalidateHistory();
+              setSession({ authenticationRequired: true, username: null });
+            }}
+          />
+        </section>
+      </main>
+    );
   return (
-    <>
+    <SessionContext.Provider value={profile}>
       {error && (
         <p className="auth-session-error" role="alert">
           {t(error)}
         </p>
       )}
       <App onLogout={session.authenticationRequired ? logout : undefined} loggingOut={loggingOut} />
-    </>
+    </SessionContext.Provider>
   );
 }
